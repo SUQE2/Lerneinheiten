@@ -29,6 +29,14 @@ let profile = null;
 let groups = [];
 let group = null;
 let members = [];
+let joinRequests = [];
+let auditLogs = [];
+let adminSettings = null;
+let ownPendingRequests = 0;
+let weeklyGoalMinutes = 600;
+let editingEntryId = null;
+let editingEntryOwnerId = null;
+let installPrompt = null;
 let showGroupSetup = false;
 let realtimeChannel = null;
 let refreshTimer = null;
@@ -148,16 +156,25 @@ function entryRows(items, emptyText, options = {}) {
     .map(entry => {
       const date = parseDate(entry.date);
       const category = categories[entry.category] || categories.sonstiges;
+      const visibilityLabels = { group: "Gruppe", admins: "Admins", private: "Nur ich" };
       const visibility = options.showVisibility
-        ? `<span class="entry-visibility ${entry.visibility}">${entry.visibility === "private" ? "Privat" : "Gruppe"}</span> · `
+        ? `<span class="entry-visibility ${entry.visibility}">${visibilityLabels[entry.visibility] || "Privat"}</span> · `
         : "";
-      const owner = options.showOwner ? `<span class="entry-owner">${escapeHtml(memberName(entry.ownerId))}</span> · ${visibility}` : visibility;
-      const canDelete = options.allowDelete !== false && (!session || entry.ownerId === session.user.id || options.allowManage);
+      const groupLabel = options.showGroup
+        ? `${escapeHtml(groups.find(item => item.id === entry.groupId)?.name || "Ohne Gruppe")} · `
+        : "";
+      const owner = options.showOwner ? `<span class="entry-owner">${escapeHtml(memberName(entry.ownerId))}</span> · ${groupLabel}${visibility}` : `${groupLabel}${visibility}`;
+      const ownsEntry = !session || entry.ownerId === session.user.id;
+      const canEdit = options.allowEdit !== false && (ownsEntry || (options.allowManage && entry.visibility !== "private"));
+      const canDelete = options.allowDelete !== false && (ownsEntry || (options.allowManage && entry.visibility !== "private"));
       return `<div class="entry-row">
         <div class="entry-date"><strong>${date.getDate()}</strong><span>${shortMonths[date.getMonth()]}</span></div>
         <div class="entry-info"><strong>${escapeHtml(entry.topic || "Lerneinheit")}</strong><span>${owner}<i class="entry-dot ${entry.category}"></i>${category.label} · ${dayNames[(date.getDay() + 6) % 7]}</span></div>
         <span class="entry-duration">${formatDuration(entry.minutes)}</span>
-        ${canDelete ? `<button class="delete-button" data-delete="${entry.id}" aria-label="Eintrag löschen" title="Eintrag löschen">×</button>` : "<span></span>"}
+        <div class="entry-actions">
+          ${canEdit ? `<button class="edit-button" data-edit="${entry.id}" aria-label="Eintrag bearbeiten" title="Eintrag bearbeiten">✎</button>` : ""}
+          ${canDelete ? `<button class="delete-button" data-delete="${entry.id}" aria-label="Eintrag löschen" title="Eintrag löschen">×</button>` : ""}
+        </div>
       </div>`;
     }).join("");
 }
@@ -214,6 +231,12 @@ function renderWeek() {
   $("#weekLabel").textContent = `KW ${getWeekNumber(weekCursor)}`;
   $("#weekDateRange").textContent = `${weekCursor.getDate()}. ${shortMonths[weekCursor.getMonth()]} – ${end.getDate()}. ${shortMonths[end.getMonth()]} ${end.getFullYear()}`;
   $("#weekTotal").textContent = formatDuration(total);
+  const goalPercent = Math.min(100, Math.round(total / weeklyGoalMinutes * 100));
+  $("#goalProgressText").textContent = `${compactDuration(total)} von ${compactDuration(weeklyGoalMinutes)}`;
+  $("#goalProgressBar").style.width = `${goalPercent}%`;
+  $("#goalRemaining").textContent = total >= weeklyGoalMinutes
+    ? `Ziel erreicht – ${formatDuration(total - weeklyGoalMinutes)} darüber.`
+    : `Noch ${formatDuration(weeklyGoalMinutes - total)} bis zu deinem Ziel.`;
   $("#activeDays").innerHTML = `${activeDates.size} <small>/ 7</small>`;
   $("#dailyAverage").textContent = formatDuration(activeDates.size ? Math.round(total / activeDates.size) : 0);
   if (!total) $("#weekDelta").textContent = "Noch keine Lernzeit";
@@ -309,7 +332,7 @@ function renderAllEntries() {
     (!search || (entry.topic || "Lerneinheit").toLowerCase().includes(search))
   );
   $("#allEntriesTotal").textContent = formatDuration(sum(filtered));
-  $("#allEntries").innerHTML = entryRows(filtered, "Keine passenden Einträge gefunden.");
+  $("#allEntries").innerHTML = entryRows(filtered, "Keine passenden Einträge gefunden.", { showGroup: true, showVisibility: true });
 }
 
 function currentStreak() {
@@ -324,6 +347,31 @@ function currentStreak() {
   return count;
 }
 
+function formatDateTime(value) {
+  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function auditDescription(item) {
+  const target = escapeHtml(item.details?.targetName || memberName(item.targetUserId));
+  const labels = {
+    group_created: "hat die Gruppe erstellt",
+    join_requested: `${target} hat den Beitritt angefragt`,
+    join_approved: `${target} wurde aufgenommen`,
+    join_rejected: `Anfrage von ${target} wurde abgelehnt`,
+    admin_granted: `${target} wurde zum Admin gemacht`,
+    admin_revoked: `${target} wurden Adminrechte entzogen`,
+    member_removed: `${target} wurde entfernt`,
+    member_left: `${target} hat die Gruppe verlassen`,
+    ownership_transferred: `${target} ist jetzt Hauptadmin`,
+    group_renamed: `hat die Gruppe in „${escapeHtml(item.details?.name || "–")}“ umbenannt`,
+    invite_settings_changed: "hat die Einladungseinstellungen geändert",
+    invite_code_rotated: "hat einen neuen Einladungscode erzeugt",
+    capacity_changed: `hat die Platzanzahl auf ${Number(item.details?.maxMembers) || "–"} geändert`,
+    entry_deleted_by_admin: "hat einen Gruppeneintrag gelöscht"
+  };
+  return labels[item.action] || "hat eine Änderung vorgenommen";
+}
+
 function renderGroup() {
   const hasGroups = groups.length > 0;
   const setupVisible = Boolean(session) && (!hasGroups || showGroupSetup);
@@ -334,6 +382,10 @@ function renderGroup() {
 
   $("#welcomeName").textContent = profile?.displayName || "";
   $("#groupSetupTitle").textContent = hasGroups ? "Weitere Gruppe hinzufügen" : "Starte deine Lerngruppe";
+  $("#pendingJoinNote").classList.toggle("hidden", ownPendingRequests === 0);
+  $("#pendingJoinNote").textContent = ownPendingRequests === 1
+    ? "Eine Beitrittsanfrage wartet noch auf die Bestätigung eines Admins."
+    : `${ownPendingRequests} Beitrittsanfragen warten noch auf die Bestätigung der Admins.`;
   $("#cancelGroupSetup").classList.toggle("hidden", !hasGroups);
   if (!group) return;
   $("#groupSelector").innerHTML = groups.map(item =>
@@ -344,15 +396,31 @@ function renderGroup() {
   $("#groupMaxMembers").textContent = group.maxMembers;
   const ownMember = currentMember();
   const administrator = isGroupAdmin();
+  const owner = ownMember?.role === "owner";
   const roleLabels = { owner: "Hauptadmin", admin: "Admin", member: "Mitglied" };
   $("#groupRoleLabel").textContent = roleLabels[ownMember?.role] || "Mitglied";
   $("#inviteBox").classList.toggle("hidden", !administrator);
-  $("#inviteCode").textContent = group.inviteCode || "–";
+  $("#inviteCode").textContent = adminSettings?.inviteCode || group.inviteCode || "–";
   $("#groupCapacitySelect").value = String(group.maxMembers);
   $("#groupCapacitySelect").disabled = false;
   $("#groupActivityNote").textContent = administrator
-    ? "Admins sehen freigegebene und private Einträge"
-    : "Du siehst nur freigegebene Einträge";
+    ? "Admins sehen Gruppen- und Admin-Einträge – niemals echte private Einträge"
+    : "Du siehst nur Einträge für die ganze Gruppe";
+  $$(".admin-only").forEach(element => element.classList.toggle("hidden", !administrator));
+  $$(".owner-only").forEach(element => element.classList.toggle("hidden", !owner));
+  $("#leaveGroupButton").classList.toggle("hidden", owner);
+  $("#renameGroupInput").value = group.name;
+  if (adminSettings) {
+    $("#inviteEnabled").checked = Boolean(adminSettings.inviteEnabled);
+    $("#inviteExpiry").value = adminSettings.inviteExpiresAt
+      ? new Date(new Date(adminSettings.inviteExpiresAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      : "";
+  }
+  const transferCandidates = members.filter(member => member.id !== session.user.id);
+  $("#transferOwnerSelect").innerHTML = transferCandidates.length
+    ? transferCandidates.map(member => `<option value="${member.id}">${escapeHtml(member.displayName)}</option>`).join("")
+    : '<option value="">Noch kein weiteres Mitglied</option>';
+  $("#transferOwnerForm").querySelector("button").disabled = !transferCandidates.length;
 
   const start = startOfWeek(new Date());
   const end = addDays(start, 6);
@@ -382,7 +450,7 @@ function renderGroup() {
     </div>`;
   }).join("");
 
-  const groupEntries = sharedEntries.filter(entry => entry.groupId === group.id);
+  const groupEntries = sharedEntries.filter(entry => entry.groupId === group.id && entry.visibility !== "private");
   const visibleActivity = (administrator
     ? groupEntries
     : groupEntries.filter(entry => entry.visibility === "group"))
@@ -392,6 +460,18 @@ function renderGroup() {
     "Noch keine sichtbaren Einträge in eurer Gruppe.",
     { showOwner: true, showVisibility: administrator, allowDelete: administrator, allowManage: administrator }
   );
+
+  $("#joinRequestCount").textContent = joinRequests.length;
+  $("#joinRequests").innerHTML = joinRequests.length ? joinRequests.map(request => `
+    <div class="request-row">
+      <span class="avatar">${initials(request.displayName)}</span>
+      <span><strong>${escapeHtml(request.displayName)}</strong><small>${formatDateTime(request.createdAt)}</small></span>
+      <div class="button-row"><button class="text-button" data-decide-request="approve" data-request-user="${request.userId}">Annehmen</button><button class="text-button danger-text" data-decide-request="reject" data-request-user="${request.userId}">Ablehnen</button></div>
+    </div>`).join("") : '<div class="empty-state">Keine offenen Beitrittsanfragen.</div>';
+
+  $("#auditLog").innerHTML = auditLogs.length ? auditLogs.map(item => `
+    <div class="audit-row"><span>${escapeHtml(item.actorName || "Unbekannt")} ${auditDescription(item)}</span><small>${formatDateTime(item.createdAt)}</small></div>
+  `).join("") : '<div class="empty-state">Noch keine Verwaltungsaktionen protokolliert.</div>';
 }
 
 function renderAccount() {
@@ -405,6 +485,8 @@ function renderAccount() {
   if (session) {
     $("#accountName").textContent = profile?.displayName || "Dein Konto";
     $("#accountEmail").textContent = session.user.email || "";
+    $("#accountDisplayName").value = profile?.displayName || "";
+    $("#accountEmailInput").value = session.user.email || "";
   }
 }
 
@@ -434,17 +516,40 @@ function showView(view) {
   history.replaceState(null, "", `#${view}`);
 }
 
-function openDialog() {
+function syncVisibilityAvailability() {
+  const hasGroup = Boolean($("#entryGroupSelect").value);
+  $$("input[name=visibility]").forEach(input => {
+    input.disabled = !hasGroup && input.value !== "private";
+  });
+  if (!hasGroup) $("input[name=visibility][value=private]").checked = true;
+}
+
+function openDialog(entry = null) {
   if (!session) {
     openAuthDialog();
     return;
   }
-  $("#entryDate").value = localISO(new Date());
+  editingEntryId = entry?.id || null;
+  editingEntryOwnerId = entry?.ownerId || session.user.id;
+  const editingOwnEntry = editingEntryOwnerId === session.user.id;
+  $("#entryDialogEyebrow").textContent = entry ? "Lerneinheit ändern" : "Neue Lerneinheit";
+  $("#entryDialogTitle").textContent = entry ? "Eintrag bearbeiten" : "Lernzeit eintragen";
+  $("#entrySubmitButton").textContent = entry ? "Änderungen speichern" : "Eintrag speichern";
+  $("#entryDate").value = entry?.date || localISO(new Date());
+  $("#entryHours").value = entry ? Math.floor(entry.minutes / 60) : 0;
+  $("#entryMinutes").value = entry ? entry.minutes % 60 : 30;
+  $("#entryTopic").value = entry?.topic || "";
+  if (entry) $(`input[name=category][value=${entry.category}]`).checked = true;
+  $("#entryGroupSelect").innerHTML = '<option value="">Keine Gruppe · nur für mich</option>' + groups.map(item =>
+    `<option value="${item.id}">${escapeHtml(item.name)}</option>`
+  ).join("");
+  $("#entryGroupSelect").value = entry?.groupId || group?.id || "";
+  $("#entryGroupSelect").disabled = Boolean(entry) && !editingOwnEntry;
   $("#formError").textContent = "";
-  $("#visibilityField").classList.toggle("hidden", !session || !group);
-  $("#entryGroupName").textContent = group?.name || "deiner Gruppe";
-  const visibility = $(`input[name=visibility][value=${group ? "group" : "private"}]`);
+  const visibility = $(`input[name=visibility][value=${entry?.visibility || ($("#entryGroupSelect").value ? "group" : "private")}]`);
   if (visibility) visibility.checked = true;
+  syncVisibilityAvailability();
+  $("input[name=visibility][value=private]").disabled = !editingOwnEntry;
   $("#entryDialog").showModal();
 }
 
@@ -481,6 +586,7 @@ function updateAuthMode() {
   $("#authSubmit").textContent = register ? "Registrieren" : "Anmelden";
   $("#authModeSwitch").textContent = register ? "Schon ein Konto? Anmelden" : "Noch kein Konto? Registrieren";
   $("#displayNameLabel").classList.toggle("hidden", !register);
+  $("#forgotPasswordButton").classList.toggle("hidden", register);
   $("#authDisplayName").required = register;
   $("#authPassword").autocomplete = register ? "new-password" : "current-password";
 }
@@ -495,7 +601,8 @@ function mapCloudEntry(row) {
     minutes: row.minutes,
     topic: row.topic,
     visibility: row.visibility,
-    createdAt: new Date(row.created_at).getTime()
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at || row.created_at).getTime()
   };
 }
 
@@ -527,6 +634,12 @@ async function loadCloudState({ migrate = false } = {}) {
     const profileResult = await cloud.from("profiles").select("id, display_name").eq("id", userId).single();
     if (profileResult.error) throw profileResult.error;
     profile = { id: profileResult.data.id, displayName: profileResult.data.display_name };
+    const ownRequestsResult = await cloud.from("group_join_requests")
+      .select("group_id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "pending");
+    if (ownRequestsResult.error) throw ownRequestsResult.error;
+    ownPendingRequests = ownRequestsResult.count || 0;
 
     const membershipResult = await cloud.from("group_members")
       .select("group_id, role, joined_at")
@@ -536,6 +649,9 @@ async function loadCloudState({ migrate = false } = {}) {
     groups = [];
     group = null;
     members = [];
+    joinRequests = [];
+    auditLogs = [];
+    adminSettings = null;
 
     if (membershipResult.data.length) {
       const membershipByGroup = new Map(membershipResult.data.map(item => [item.group_id, item]));
@@ -563,16 +679,29 @@ async function loadCloudState({ migrate = false } = {}) {
       group = groups.find(item => item.id === storedGroupId) || groups[0];
       localStorage.setItem(activeGroupStorageKey(), group.id);
       const administrator = ["owner", "admin"].includes(group.role);
-      const [membershipsResult, inviteResult] = await Promise.all([
+      const [membershipsResult, settingsResult, requestsResult, auditResult] = await Promise.all([
         cloud.from("group_members").select("user_id, role, joined_at").eq("group_id", group.id).order("joined_at"),
         administrator
-          ? cloud.rpc("get_group_invite_code", { target_group_id: group.id })
-          : Promise.resolve({ data: null, error: null })
+          ? cloud.rpc("get_group_admin_settings", { target_group_id: group.id })
+          : Promise.resolve({ data: null, error: null }),
+        administrator
+          ? cloud.from("group_join_requests").select("user_id, created_at").eq("group_id", group.id).eq("status", "pending").order("created_at")
+          : Promise.resolve({ data: [], error: null }),
+        administrator
+          ? cloud.from("group_audit_log").select("id, actor_id, action, target_user_id, details, created_at").eq("group_id", group.id).order("created_at", { ascending: false }).limit(50)
+          : Promise.resolve({ data: [], error: null })
       ]);
       if (membershipsResult.error) throw membershipsResult.error;
-      if (inviteResult.error) throw inviteResult.error;
-      group.inviteCode = inviteResult.data;
-      const ids = membershipsResult.data.map(item => item.user_id);
+      if (settingsResult.error) throw settingsResult.error;
+      if (requestsResult.error) throw requestsResult.error;
+      if (auditResult.error) throw auditResult.error;
+      adminSettings = settingsResult.data;
+      group.inviteCode = adminSettings?.inviteCode || null;
+      const ids = [...new Set([
+        ...membershipsResult.data.map(item => item.user_id),
+        ...requestsResult.data.map(item => item.user_id),
+        ...auditResult.data.map(item => item.actor_id).filter(Boolean)
+      ])];
       const profilesResult = await cloud.from("profiles").select("id, display_name").in("id", ids);
       if (profilesResult.error) throw profilesResult.error;
       const names = new Map(profilesResult.data.map(item => [item.id, item.display_name]));
@@ -582,15 +711,36 @@ async function loadCloudState({ migrate = false } = {}) {
         role: item.role,
         joinedAt: item.joined_at
       }));
+      joinRequests = requestsResult.data.map(item => ({
+        userId: item.user_id,
+        displayName: names.get(item.user_id) || "Interessent",
+        createdAt: item.created_at
+      }));
+      auditLogs = auditResult.data.map(item => ({
+        id: item.id,
+        actorId: item.actor_id,
+        actorName: names.get(item.actor_id) || item.details?.actorName || "Unbekannt",
+        action: item.action,
+        targetUserId: item.target_user_id,
+        details: item.details || {},
+        createdAt: item.created_at
+      }));
     }
 
     if (migrate) await migrateLocalEntries();
 
-    const entriesResult = await cloud.from("entries")
-      .select("id, user_id, group_id, entry_date, category, minutes, topic, visibility, created_at")
-      .order("entry_date", { ascending: false })
-      .order("created_at", { ascending: false });
+    const [entriesResult, goalResult] = await Promise.all([
+      cloud.from("entries")
+        .select("id, user_id, group_id, entry_date, category, minutes, topic, visibility, created_at, updated_at")
+        .order("entry_date", { ascending: false })
+        .order("created_at", { ascending: false }),
+      cloud.from("learning_goals").select("weekly_minutes").eq("user_id", userId).maybeSingle()
+    ]);
     if (entriesResult.error) throw entriesResult.error;
+    if (goalResult.error) throw goalResult.error;
+    weeklyGoalMinutes = goalResult.data?.weekly_minutes || 600;
+    $("#goalHours").value = Math.floor(weeklyGoalMinutes / 60);
+    $("#goalMinutes").value = weeklyGoalMinutes % 60;
     sharedEntries = entriesResult.data.map(mapCloudEntry);
     entries = sharedEntries.filter(entry => entry.ownerId === userId);
     renderAll();
@@ -616,6 +766,18 @@ function setupRealtime() {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => loadCloudState(), 250);
     })
+    .on("postgres_changes", { event: "*", schema: "public", table: "group_join_requests" }, () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => loadCloudState(), 250);
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "group_audit_log" }, () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => loadCloudState(), 250);
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "learning_goals" }, () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => loadCloudState(), 250);
+    })
     .subscribe();
 }
 
@@ -626,6 +788,10 @@ async function handleSession(nextSession, migrate = false) {
     groups = [];
     group = null;
     members = [];
+    joinRequests = [];
+    auditLogs = [];
+    adminSettings = null;
+    ownPendingRequests = 0;
     showGroupSetup = false;
     sharedEntries = [];
     entries = [];
@@ -657,14 +823,21 @@ async function initializeCloud() {
       setTimeout(() => handleSession(nextSession, true), 0);
     }
     if (event === "SIGNED_OUT") setTimeout(() => handleSession(null), 0);
+    if (event === "PASSWORD_RECOVERY") setTimeout(async () => {
+      await handleSession(nextSession);
+      $("#accountDialog").showModal();
+      $("#newPassword").focus();
+      showToast("Lege jetzt dein neues Passwort fest");
+    }, 0);
   });
 }
 
 $$('.nav-item').forEach(button => button.addEventListener('click', () => showView(button.dataset.view)));
 $$('[data-go]').forEach(button => button.addEventListener('click', () => showView(button.dataset.go)));
 $(".brand").addEventListener("click", event => { event.preventDefault(); showView("woche"); });
-$("#openEntryButton").addEventListener("click", openDialog);
-$("#closeDialog").addEventListener("click", () => $("#entryDialog").close());
+$("#openEntryButton").addEventListener("click", () => openDialog());
+$("#entryGroupSelect").addEventListener("change", syncVisibilityAvailability);
+$("#closeDialog").addEventListener("click", () => { editingEntryId = null; editingEntryOwnerId = null; $("#entryDialog").close(); });
 $("#entryDialog").addEventListener("click", event => {
   if (event.target === $("#entryDialog")) $("#entryDialog").close();
 });
@@ -688,29 +861,32 @@ $("#entryForm").addEventListener("submit", async event => {
     return;
   }
 
-  const id = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  const id = editingEntryId || crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  const selectedGroupId = $("#entryGroupSelect").value || null;
   const entry = {
     id,
     date: $("#entryDate").value,
     category: $("input[name=category]:checked").value,
     minutes: total,
     topic: $("#entryTopic").value.trim(),
-    groupId: group?.id || null,
-    visibility: session && group ? $("input[name=visibility]:checked").value : "private",
+    groupId: selectedGroupId,
+    visibility: selectedGroupId ? $("input[name=visibility]:checked").value : "private",
     createdAt: Date.now()
   };
 
-  const { error } = await cloud.from("entries").insert({
-    id: entry.id,
-    user_id: session.user.id,
+  const payload = {
     group_id: entry.groupId,
     entry_date: entry.date,
     category: entry.category,
     minutes: entry.minutes,
     topic: entry.topic,
     visibility: entry.visibility,
-    created_at: new Date(entry.createdAt).toISOString()
-  });
+    updated_at: new Date().toISOString()
+  };
+  const result = editingEntryId
+    ? await cloud.from("entries").update(payload).eq("id", editingEntryId)
+    : await cloud.from("entries").insert({ ...payload, id: entry.id, user_id: session.user.id, created_at: new Date(entry.createdAt).toISOString() });
+  const { error } = result;
   if (error) {
     $("#formError").textContent = readableError(error);
     return;
@@ -721,10 +897,35 @@ $("#entryForm").addEventListener("submit", async event => {
   $("#entryHours").value = 0;
   $("#entryMinutes").value = 30;
   $("#entryTopic").value = "";
-  showToast(entry.visibility === "group" ? "Lernzeit wurde mit der Gruppe geteilt" : "Lernzeit wurde gespeichert");
+  const wasEditing = Boolean(editingEntryId);
+  editingEntryId = null;
+  editingEntryOwnerId = null;
+  showToast(wasEditing ? "Eintrag wurde aktualisiert" : entry.visibility === "group" ? "Lernzeit wurde mit der Gruppe geteilt" : "Lernzeit wurde gespeichert");
 });
 
 document.addEventListener("click", async event => {
+  const requestButton = event.target.closest("[data-decide-request]");
+  if (requestButton) {
+    requestButton.disabled = true;
+    const approve = requestButton.dataset.decideRequest === "approve";
+    const { error } = await cloud.rpc("decide_group_join_request", {
+      target_group_id: group.id,
+      target_user_id: requestButton.dataset.requestUser,
+      approve_request: approve
+    });
+    if (error) return showToast(readableError(error));
+    await loadCloudState();
+    showToast(approve ? "Mitglied wurde aufgenommen" : "Anfrage wurde abgelehnt");
+    return;
+  }
+
+  const editButton = event.target.closest("[data-edit]");
+  if (editButton) {
+    const entry = sharedEntries.find(item => item.id === editButton.dataset.edit);
+    if (entry) openDialog(entry);
+    return;
+  }
+
   const removeButton = event.target.closest("[data-remove-member]");
   if (removeButton) {
     if (!confirm(`${removeButton.dataset.memberName} wirklich aus der Gruppe entfernen?`)) return;
@@ -742,7 +943,7 @@ document.addEventListener("click", async event => {
   if (deleteButton) {
     if (!confirm("Diesen Eintrag wirklich löschen?")) return;
     if (session) {
-      const { error } = await cloud.from("entries").delete().eq("id", deleteButton.dataset.delete);
+      const { error } = await cloud.rpc("delete_entry", { target_entry_id: deleteButton.dataset.delete });
       if (error) return showToast(readableError(error));
       await loadCloudState();
     } else {
@@ -788,6 +989,46 @@ $("#yearNext").addEventListener("click", () => { yearCursor++; renderYear(); });
 $("#yearToday").addEventListener("click", () => { yearCursor = new Date().getFullYear(); renderYear(); });
 $("#entrySearch").addEventListener("input", renderAllEntries);
 $("#categoryFilter").addEventListener("change", renderAllEntries);
+$("#goalForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const minutes = Number($("#goalHours").value || 0) * 60 + Number($("#goalMinutes").value || 0);
+  if (minutes < 30 || minutes > 10080) return showToast("Das Wochenziel muss zwischen 30 Minuten und 168 Stunden liegen.");
+  const { error } = await cloud.from("learning_goals").upsert({
+    user_id: session.user.id,
+    weekly_minutes: minutes,
+    updated_at: new Date().toISOString()
+  });
+  if (error) return showToast(readableError(error));
+  weeklyGoalMinutes = minutes;
+  renderWeek();
+  showToast("Wochenziel gespeichert");
+});
+
+function exportEntriesCsv() {
+  const safeCell = value => {
+    let text = String(value ?? "");
+    if (/^[=+\-@]/.test(text)) text = `'${text}`;
+    return `"${text.replaceAll('"', '""')}"`;
+  };
+  const rows = [["Datum", "Bereich", "Dauer (Minuten)", "Thema", "Gruppe", "Sichtbarkeit"], ...entries.map(entry => [
+    entry.date,
+    categories[entry.category]?.label || entry.category,
+    entry.minutes,
+    entry.topic,
+    groups.find(item => item.id === entry.groupId)?.name || "Keine",
+    { group: "Gruppe", admins: "Admins", private: "Nur ich" }[entry.visibility]
+  ])];
+  const csv = `\ufeff${rows.map(row => row.map(safeCell).join(";")).join("\n")}`;
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `lernzeit-export-${localISO(new Date())}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+$("#exportCsvButton").addEventListener("click", exportEntriesCsv);
+$("#exportPdfButton").addEventListener("click", () => window.print());
 $("#groupSelector").addEventListener("change", async event => {
   localStorage.setItem(activeGroupStorageKey(), event.target.value);
   await loadCloudState();
@@ -817,6 +1058,65 @@ $("#cancelGroupSetup").addEventListener("click", () => {
   renderGroup();
 });
 
+$("#renameGroupForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const { error } = await cloud.rpc("rename_group", { target_group_id: group.id, new_name: $("#renameGroupInput").value.trim() });
+  if (error) return showToast(readableError(error));
+  await loadCloudState();
+  showToast("Gruppenname geändert");
+});
+
+$("#inviteSettingsForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const expiry = $("#inviteExpiry").value;
+  const { error } = await cloud.rpc("set_group_invite_settings", {
+    target_group_id: group.id,
+    invitations_enabled: $("#inviteEnabled").checked,
+    expires_at: expiry ? new Date(expiry).toISOString() : null
+  });
+  if (error) return showToast(readableError(error));
+  await loadCloudState();
+  showToast("Einladungseinstellungen gespeichert");
+});
+
+$("#rotateInviteButton").addEventListener("click", async () => {
+  if (!confirm("Den bisherigen Einladungscode wirklich ungültig machen?")) return;
+  const { data, error } = await cloud.rpc("rotate_group_invite_code", { target_group_id: group.id });
+  if (error) return showToast(readableError(error));
+  await loadCloudState();
+  showToast(`Neuer Code: ${data}`);
+});
+
+$("#transferOwnerForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const target = $("#transferOwnerSelect").value;
+  const name = members.find(member => member.id === target)?.displayName;
+  if (!target || !confirm(`${name} wirklich zum Hauptadmin machen? Du wirst danach normaler Admin.`)) return;
+  const { error } = await cloud.rpc("transfer_group_ownership", { target_group_id: group.id, target_user_id: target });
+  if (error) return showToast(readableError(error));
+  await loadCloudState();
+  showToast("Hauptadmin wurde übertragen");
+});
+
+$("#leaveGroupButton").addEventListener("click", async () => {
+  if (!confirm(`„${group.name}“ wirklich verlassen? Deine Einträge bleiben in deinem Konto, werden aber von der Gruppe getrennt.`)) return;
+  const { error } = await cloud.rpc("leave_group", { target_group_id: group.id });
+  if (error) return showToast(readableError(error));
+  localStorage.removeItem(activeGroupStorageKey());
+  await loadCloudState();
+  showToast("Du hast die Gruppe verlassen");
+});
+
+$("#deleteGroupButton").addEventListener("click", async () => {
+  const confirmation = prompt(`Zum endgültigen Löschen bitte den Gruppennamen „${group.name}“ eingeben:`);
+  if (confirmation !== group.name) return;
+  const { error } = await cloud.rpc("delete_group", { target_group_id: group.id });
+  if (error) return showToast(readableError(error));
+  localStorage.removeItem(activeGroupStorageKey());
+  await loadCloudState();
+  showToast("Gruppe wurde gelöscht");
+});
+
 $("#accountButton").addEventListener("click", () => session ? $("#accountDialog").showModal() : openAuthDialog());
 $("#groupLoginButton").addEventListener("click", openAuthDialog);
 $("#closeAuthDialog").addEventListener("click", () => $("#authDialog").close());
@@ -825,6 +1125,14 @@ $("#authModeSwitch").addEventListener("click", () => {
   authMode = authMode === "login" ? "register" : "login";
   $("#authError").textContent = "";
   updateAuthMode();
+});
+$("#forgotPasswordButton").addEventListener("click", async () => {
+  const email = $("#authEmail").value.trim();
+  if (!email) return $("#authError").textContent = "Trage zuerst deine E-Mail-Adresse ein.";
+  const { error } = await cloud.auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}${location.pathname}#woche` });
+  if (error) return $("#authError").textContent = readableError(error);
+  $("#authDialog").close();
+  showToast("Der Link zum Zurücksetzen wurde per E-Mail versendet");
 });
 
 $("#authForm").addEventListener("submit", async event => {
@@ -861,6 +1169,52 @@ $("#logoutButton").addEventListener("click", async () => {
   if (error) showToast(readableError(error));
 });
 
+$("#profileForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const displayName = $("#accountDisplayName").value.trim();
+  const email = $("#accountEmailInput").value.trim();
+  const profileResult = await cloud.from("profiles").update({ display_name: displayName }).eq("id", session.user.id);
+  if (profileResult.error) return showToast(readableError(profileResult.error));
+  const authResult = await cloud.auth.updateUser({ email, data: { display_name: displayName } });
+  if (authResult.error) return showToast(readableError(authResult.error));
+  await loadCloudState();
+  showToast(email !== session.user.email ? "Bitte bestätige die neue E-Mail-Adresse" : "Kontodaten gespeichert");
+});
+
+$("#passwordForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const { error } = await cloud.auth.updateUser({ password: $("#newPassword").value });
+  if (error) return showToast(readableError(error));
+  $("#passwordForm").reset();
+  showToast("Passwort wurde geändert");
+});
+
+$("#deleteAccountButton").addEventListener("click", async () => {
+  if (prompt('Zum Löschen deines Kontos bitte „LÖSCHEN“ eingeben:') !== "LÖSCHEN") return;
+  const { error } = await cloud.rpc("delete_own_account");
+  if (error) return showToast(readableError(error));
+  $("#accountDialog").close();
+  await cloud.auth.signOut();
+  showToast("Konto und Daten wurden gelöscht");
+});
+
+window.addEventListener("beforeinstallprompt", event => {
+  event.preventDefault();
+  installPrompt = event;
+  $("#installAppButton").classList.remove("hidden");
+});
+$("#installAppButton").addEventListener("click", async () => {
+  if (!installPrompt) return;
+  await installPrompt.prompt();
+  installPrompt = null;
+  $("#installAppButton").classList.add("hidden");
+});
+window.addEventListener("appinstalled", () => {
+  installPrompt = null;
+  $("#installAppButton").classList.add("hidden");
+  showToast("Lernzeit wurde als App installiert");
+});
+
 $("#createGroupForm").addEventListener("submit", async event => {
   event.preventDefault();
   $("#createGroupError").textContent = "";
@@ -885,10 +1239,9 @@ $("#joinGroupForm").addEventListener("submit", async event => {
     return;
   }
   $("#joinGroupForm").reset();
-  localStorage.setItem(activeGroupStorageKey(), data);
-  showGroupSetup = false;
+  showGroupSetup = groups.length > 0;
   await loadCloudState();
-  showToast("Du bist der Gruppe beigetreten");
+  showToast("Beitrittsanfrage gesendet – ein Admin muss sie noch bestätigen");
 });
 
 $("#copyInviteButton").addEventListener("click", async () => {
@@ -901,4 +1254,5 @@ $("#copyInviteButton").addEventListener("click", async () => {
 });
 
 const requestedView = location.hash.slice(1) || "gruppe";
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(console.error));
 initializeCloud();

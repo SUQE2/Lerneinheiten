@@ -17,6 +17,7 @@
 html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 button, input, select { font: inherit; }
+button:disabled { cursor: not-allowed; opacity: .55; }
 button { color: inherit; }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 248px minmax(0, 1fr); }
 .sidebar { position: sticky; top: 0; height: 100vh; padding: 30px 22px 24px; background: var(--primary); color: white; display: flex; flex-direction: column; }
@@ -108,9 +109,11 @@ h2 { font-size: 24px; letter-spacing: -.4px; }
 .entry-info span { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--muted); font-size: 9px; }
 .entry-dot { width: 6px; height: 6px; border-radius: 50%; }
 .entry-duration { font-family: Georgia, serif; font-size: 16px; white-space: nowrap; }
-.delete-button { border: 0; padding: 8px; background: none; color: #a49e94; cursor: pointer; font-size: 16px; opacity: .3; }
-.entry-row:hover .delete-button { opacity: 1; }
+.entry-actions { display: flex; align-items: center; }
+.delete-button, .edit-button { border: 0; padding: 8px; background: none; color: #a49e94; cursor: pointer; font-size: 16px; opacity: .3; }
+.entry-row:hover .delete-button, .entry-row:hover .edit-button { opacity: 1; }
 .delete-button:hover { color: #b64e3c; }
+.edit-button:hover { color: var(--primary); }
 .muted { color: var(--muted); font-size: 10px; }
 .calendar-weekdays, .month-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
 .calendar-weekdays { margin-bottom: 7px; text-align: center; color: var(--muted); font-size: 9px; }
@@ -136,13 +139,13 @@ input, select { border: 1px solid var(--line); border-radius: 10px; background: 
 input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(22,79,67,.1); }
 select { padding: 10px 35px 10px 12px; }
 .total-badge { padding: 6px 10px; border-radius: 20px; background: var(--primary-light); color: var(--primary); font-size: 11px; }
-dialog { width: min(520px, calc(100% - 30px)); padding: 0; border: 0; border-radius: 21px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px rgba(10,35,29,.25); }
+dialog { width: min(520px, calc(100% - 30px)); max-height: calc(100vh - 30px); overflow: auto; padding: 0; border: 0; border-radius: 21px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px rgba(10,35,29,.25); }
 dialog::backdrop { background: rgba(13,34,29,.55); backdrop-filter: blur(3px); }
 dialog form { padding: 28px; }
 .dialog-heading { display: flex; justify-content: space-between; margin-bottom: 25px; }
 .close-button { width: 34px; height: 34px; border-radius: 50%; font-size: 20px; }
 dialog label, fieldset { display: block; margin: 0 0 18px; color: var(--muted); font-size: 11px; font-weight: 700; }
-dialog input[type="date"], dialog input[type="number"], dialog input[type="text"] { width: 100%; margin-top: 7px; padding: 12px; }
+dialog input[type="date"], dialog input[type="number"], dialog input[type="text"], dialog input[type="email"], dialog input[type="password"], dialog select { width: 100%; margin-top: 7px; padding: 12px; }
 fieldset { padding: 0; border: 0; }
 legend { margin-bottom: 8px; }
 .category-picker { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
@@ -180,6 +183,7 @@ legend { margin-bottom: 8px; }
 .group-empty > p:not(.eyebrow) { max-width: 520px; margin: 13px auto 24px; color: var(--muted); font-size: 13px; line-height: 1.65; }
 .group-welcome { margin-bottom: 18px; }
 .group-welcome > p:last-child { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+.group-welcome .pending-note { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: #fff1d9; color: #815b1b; }
 .group-welcome #cancelGroupSetup { margin-top: 15px; }
 .group-setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .compact-form h2 { margin-bottom: 23px; }
@@ -218,6 +222,7 @@ legend { margin-bottom: 8px; }
 .entry-visibility { padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: 750; text-transform: uppercase; letter-spacing: .4px; }
 .entry-visibility.private { background: #f5e4df; color: #9d4939; }
 .entry-visibility.group { background: var(--primary-light); color: var(--primary); }
+.entry-visibility.admins { background: #e3e9f3; color: #405c82; }
 .account-dialog-content { padding: 28px; }
 .auth-switch { width: 100%; margin-top: 13px; }
 .auth-hint { margin: 17px 5px 0; color: var(--muted); font-size: 9px; line-height: 1.5; text-align: center; }
@@ -230,6 +235,34 @@ legend { margin-bottom: 8px; }
 .visibility-picker small { margin-top: 3px; color: var(--muted); font-size: 9px; font-weight: 400; }
 .visibility-picker input:checked + span { border-color: var(--primary); background: var(--primary-light); }
 .entry-owner { color: var(--ink); font-weight: 750; }
+.goal-panel { margin-bottom: 18px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 30px; }
+.goal-panel h2 { margin-bottom: 12px; }
+.goal-track { height: 10px; overflow: hidden; border-radius: 10px; background: #ece9e1; }
+.goal-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--orange); transition: width .35s ease; }
+.goal-panel .muted { margin: 9px 0 0; }
+.inline-form { display: flex; align-items: end; gap: 10px; }
+.inline-form label, .settings-form label, .account-form label { color: var(--muted); font-size: 10px; font-weight: 700; }
+.inline-form label > span { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.inline-form input { width: 64px; padding: 9px; }
+.group-admin-grid { margin: 18px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.settings-form { display: grid; gap: 12px; padding: 17px 0; border-top: 1px solid var(--line); }
+.settings-form:first-of-type { padding-top: 0; border-top: 0; }
+.settings-form input:not([type="checkbox"]), .settings-form select { width: 100%; margin-top: 7px; padding: 10px; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; }
+.button-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.danger-zone { margin-top: 15px; padding-top: 15px; display: flex; justify-content: space-between; border-top: 1px solid #ecd3cd; }
+.danger-zone .text-button, .danger-text { color: #b64e3c; }
+.request-list, .audit-list { display: grid; }
+.request-row { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+.request-row:first-child { padding-top: 0; border-top: 0; }
+.request-row > span:nth-child(2) strong, .request-row > span:nth-child(2) small { display: block; }
+.request-row small, .audit-row small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.audit-row { display: flex; justify-content: space-between; gap: 20px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 11px; }
+.audit-row:first-child { padding-top: 0; border-top: 0; }
+.audit-row small { white-space: nowrap; }
+.account-form { display: grid; gap: 12px; margin: 15px 0; padding: 15px 0; border-top: 1px solid var(--line); }
+.account-form input { width: 100%; margin-top: 6px; padding: 11px; }
+.danger-button { margin-top: 10px; border: 1px solid #c96855; border-radius: 11px; padding: 12px 18px; background: transparent; color: #a64232; font-weight: 700; cursor: pointer; }
 
 @media (max-width: 1000px) {
   .app-shell { grid-template-columns: 78px minmax(0,1fr); }
@@ -283,4 +316,18 @@ legend { margin-bottom: 8px; }
   .group-switch-row select { width: 100%; }
   .group-switch-row .text-button { align-self: flex-start; }
   .member-grid { grid-template-columns: 1fr 1fr; }
+  .goal-panel, .group-admin-grid { grid-template-columns: 1fr; }
+  .inline-form { align-items: stretch; flex-direction: column; }
+  .entries-toolbar .primary-button { width: 100%; }
+  .request-row { grid-template-columns: 36px minmax(0,1fr); }
+  .request-row .button-row { grid-column: 2; }
+}
+
+@media print {
+  .sidebar, .topbar, .entries-toolbar, .delete-button, .edit-button { display: none !important; }
+  .app-shell { display: block; }
+  .content { max-width: none; padding: 0; }
+  .view { display: none !important; }
+  #view-eintraege { display: block !important; }
+  .panel { border: 0; box-shadow: none; }
 }

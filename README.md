@@ -35,24 +35,34 @@ Der öffentliche Browser-Key darf in der Web-App stehen. Niemals den `service_ro
 - mehrere private Gruppen pro Konto
 - pro Gruppe zwischen zwei und zehn Plätze, durch Admins einstellbar
 - Beitritt über einen achtstelligen Einladungs-Code
+- Beitrittsanfragen, die erst ein Admin bestätigt
+- Einladungen deaktivieren, zeitlich begrenzen oder mit einem neuen Code versehen
 - synchronisierte Lernzeiten auf mehreren Geräten
+- Lernzeiten bearbeiten und wahlweise einer Gruppe zuordnen
+- Sichtbarkeit pro Eintrag: **Ganze Gruppe**, **Nur Gruppenadmins** oder **Nur ich**
+- persönliches Wochenziel mit Fortschrittsanzeige
+- Export aller eigenen Einträge als CSV oder druckbare PDF
 - Wochen-, Monats- und Jahresvergleich
 - gemeinsame Aktivitätsübersicht mit Thema und Kategorie
 - Rollen: **Hauptadmin**, **Admin** und **Mitglied**
 - nur der Hauptadmin kann Adminrechte vergeben oder entziehen
-- Admins können alle Einträge der Gruppe sehen und verwalten sowie Mitglieder entfernen
+- Admins können Gruppen- und Admin-Einträge sehen und verwalten sowie Mitglieder entfernen
 - normale Mitglieder sehen ausschließlich freigegebene Gruppeneinträge
-- Sichtbarkeit pro Eintrag: **Mit Gruppe teilen** oder **Nur für mich und Admins**
+- Gruppen umbenennen, verlassen, löschen und den Hauptadmin übertragen
+- Admin-Protokoll für Rollen-, Mitglieder- und Einladungsänderungen
+- Anzeigename, E-Mail und Passwort verwalten sowie das eigene Konto löschen
+- als App installierbar; die Oberfläche öffnet sich auch offline, die Synchronisierung benötigt Internet
 - automatische, private Übernahme vorhandener lokaler Einträge beim ersten Login
 
 ## Datenschutz und Zugriffsregeln
 
-Die Zugriffsregeln liegen in der Datenbank und nicht nur in der Oberfläche. Jeder Eintrag wird einer ausgewählten Gruppe zugeordnet. Normale Mitglieder können ihr eigenes Profil, ihre Gruppen und die dort freigegebenen Einträge abrufen. Hauptadmin und ernannte Admins können zusätzlich private Einträge ihrer jeweiligen Gruppe sehen und verwalten. Nur der Hauptadmin kann Rollen vergeben und entziehen.
+Die Zugriffsregeln liegen in der Datenbank und nicht nur in der Oberfläche. Einträge können ohne Gruppe privat bleiben oder einer ausgewählten Gruppe zugeordnet werden. Normale Mitglieder sehen Gruppeneinträge, Admins zusätzlich ausdrücklich für Admins freigegebene Einträge. **„Nur ich“-Einträge bleiben auch vor Admins verborgen.** Nur der Hauptadmin kann Rollen vergeben, entziehen und den Besitz übertragen.
 
 ## Vor einer öffentlichen Veröffentlichung
 
 - In Supabase unter **Authentication → URL Configuration** die endgültige Website-Adresse als Site URL eintragen.
 - Für lokale Tests `http://127.0.0.1:8000/**` als zusätzliche Redirect URL erlauben.
+- Die Netlify-Adresse zusätzlich als Redirect URL eintragen, damit Passwort-Zurücksetzen funktioniert.
 - E-Mail-Bestätigung aktiviert lassen.
 - `config.js` mit den öffentlichen Projektdaten zusammen mit den übrigen Dateien hosten.
 - Die App ausschließlich über HTTPS veröffentlichen.

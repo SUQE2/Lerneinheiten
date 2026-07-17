@@ -4,7 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f1ea">
+  <meta name="description" content="Privater Lerntracker für dich und deine Gruppen">
   <title>Lernzeit – Dein Lerntracker</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -84,6 +87,22 @@
               <span class="stat-detail" id="topCategoryDetail">Noch offen</span>
             </article>
           </div>
+
+          <article class="panel goal-panel">
+            <div>
+              <p class="eyebrow">Dein Wochenziel</p>
+              <h2><span id="goalProgressText">0 von 10 Std.</span> geschafft</h2>
+              <div class="goal-track"><span id="goalProgressBar"></span></div>
+              <p class="muted" id="goalRemaining">Lege dein persönliches Wochenziel fest.</p>
+            </div>
+            <form id="goalForm" class="inline-form">
+              <label>Ziel pro Woche
+                <span><input id="goalHours" type="number" min="0" max="168" value="10" inputmode="numeric"> Std.
+                <input id="goalMinutes" type="number" min="0" max="59" value="0" inputmode="numeric"> Min.</span>
+              </label>
+              <button class="primary-button secondary" type="submit">Ziel speichern</button>
+            </form>
+          </article>
 
           <div class="dashboard-grid">
             <article class="panel chart-panel">
@@ -184,6 +203,8 @@
               <option value="persoenlich">Persönlich</option>
               <option value="sonstiges">Sonstiges</option>
             </select>
+            <button class="primary-button secondary" id="exportCsvButton" type="button">CSV exportieren</button>
+            <button class="primary-button secondary" id="exportPdfButton" type="button">Als PDF drucken</button>
           </div>
           <article class="panel">
             <div class="panel-heading"><div><p class="eyebrow">Chronik</p><h2>Alle Lernzeiten</h2></div><strong id="allEntriesTotal" class="total-badge"></strong></div>
@@ -205,6 +226,7 @@
               <p class="eyebrow">Willkommen, <span id="welcomeName"></span></p>
               <h2 id="groupSetupTitle">Starte deine Lerngruppe</h2>
               <p>Du kannst mehrere private Gruppen erstellen oder ihnen beitreten. Jede Gruppe kann 2 bis 10 Plätze haben.</p>
+              <p class="pending-note hidden" id="pendingJoinNote">Deine Beitrittsanfrage wartet noch auf die Bestätigung eines Admins.</p>
               <button class="text-button hidden" id="cancelGroupSetup" type="button">← Zurück zur Gruppe</button>
             </article>
             <div class="group-setup-grid">
@@ -254,6 +276,39 @@
               <div class="panel-heading"><div><p class="eyebrow">Gruppenübersicht</p><h2>Aktivität der Gruppe</h2></div><span class="muted" id="groupActivityNote">Normale Mitglieder sehen nur freigegebene Einträge</span></div>
               <div id="groupActivity" class="entry-list"></div>
             </article>
+            <div class="group-admin-grid">
+              <article class="panel" id="groupManagementPanel">
+                <div class="panel-heading"><div><p class="eyebrow">Verwaltung</p><h2>Gruppeneinstellungen</h2></div></div>
+                <form id="renameGroupForm" class="settings-form admin-only">
+                  <label>Gruppenname<input id="renameGroupInput" maxlength="40" required></label>
+                  <button class="primary-button secondary" type="submit">Namen ändern</button>
+                </form>
+                <form id="inviteSettingsForm" class="settings-form admin-only">
+                  <label class="checkbox-label"><input id="inviteEnabled" type="checkbox"> Neue Anfragen erlauben</label>
+                  <label>Code gültig bis <span class="optional">optional</span><input id="inviteExpiry" type="datetime-local"></label>
+                  <div class="button-row">
+                    <button class="primary-button secondary" type="submit">Einladung speichern</button>
+                    <button class="text-button" id="rotateInviteButton" type="button">Neuen Code erzeugen</button>
+                  </div>
+                </form>
+                <form id="transferOwnerForm" class="settings-form owner-only">
+                  <label>Hauptadmin übertragen<select id="transferOwnerSelect"></select></label>
+                  <button class="primary-button secondary" type="submit">Übertragen</button>
+                </form>
+                <div class="danger-zone">
+                  <button class="text-button" id="leaveGroupButton" type="button">Gruppe verlassen</button>
+                  <button class="text-button owner-only" id="deleteGroupButton" type="button">Gruppe endgültig löschen</button>
+                </div>
+              </article>
+              <article class="panel admin-only" id="joinRequestsPanel">
+                <div class="panel-heading"><div><p class="eyebrow">Freigabe</p><h2>Beitrittsanfragen</h2></div><span class="total-badge" id="joinRequestCount">0</span></div>
+                <div id="joinRequests" class="request-list"></div>
+              </article>
+            </div>
+            <article class="panel admin-only" id="auditPanel">
+              <div class="panel-heading"><div><p class="eyebrow">Admin-Protokoll</p><h2>Was in der Gruppe passiert ist</h2></div><span class="muted">Nur für Admins sichtbar</span></div>
+              <div id="auditLog" class="audit-list"></div>
+            </article>
           </div>
         </section>
       </div>
@@ -263,7 +318,7 @@
   <dialog id="entryDialog">
     <form id="entryForm" method="dialog">
       <div class="dialog-heading">
-        <div><p class="eyebrow">Neue Lerneinheit</p><h2>Lernzeit eintragen</h2></div>
+        <div><p class="eyebrow" id="entryDialogEyebrow">Neue Lerneinheit</p><h2 id="entryDialogTitle">Lernzeit eintragen</h2></div>
         <button type="button" class="close-button" id="closeDialog" aria-label="Schließen">×</button>
       </div>
 
@@ -282,15 +337,17 @@
         <label>Minuten<input type="number" id="entryMinutes" min="0" max="59" value="30" inputmode="numeric"></label>
       </div>
       <label>Thema <span class="optional">optional</span><input type="text" id="entryTopic" maxlength="80" placeholder="z. B. Prüfungsvorbereitung"></label>
-      <fieldset id="visibilityField" class="hidden">
-        <legend>Sichtbarkeit in <span id="entryGroupName">deiner Gruppe</span></legend>
+      <label>Gruppe <span class="optional">optional</span><select id="entryGroupSelect"></select></label>
+      <fieldset id="visibilityField">
+        <legend>Sichtbarkeit</legend>
         <div class="visibility-picker">
-          <label><input type="radio" name="visibility" value="group" checked><span><strong>Mit Gruppe teilen</strong><small>Dauer, Bereich und Thema sind sichtbar</small></span></label>
-          <label><input type="radio" name="visibility" value="private"><span><strong>Nur für mich und Admins</strong><small>Normale Mitglieder sehen diesen Eintrag nicht</small></span></label>
+          <label><input type="radio" name="visibility" value="group" checked><span><strong>Ganze Gruppe</strong><small>Alle Mitglieder der ausgewählten Gruppe sehen den Eintrag</small></span></label>
+          <label><input type="radio" name="visibility" value="admins"><span><strong>Nur Gruppenadmins</strong><small>Du und die Admins der ausgewählten Gruppe sehen ihn</small></span></label>
+          <label><input type="radio" name="visibility" value="private"><span><strong>Nur ich</strong><small>Auch Gruppenadmins können diesen Eintrag nicht sehen</small></span></label>
         </div>
       </fieldset>
       <p class="form-error" id="formError" role="alert"></p>
-      <button class="primary-button submit-button" type="submit">Eintrag speichern</button>
+      <button class="primary-button submit-button" id="entrySubmitButton" type="submit">Eintrag speichern</button>
     </form>
   </dialog>
 
@@ -306,7 +363,8 @@
       <p class="form-error" id="authError" role="alert"></p>
       <button class="primary-button submit-button" id="authSubmit" type="submit">Anmelden</button>
       <button class="text-button auth-switch" id="authModeSwitch" type="button">Noch kein Konto? Registrieren</button>
-      <p class="auth-hint">Normale Mitglieder sehen nur freigegebene Einträge. Gruppenadmins können alle Einträge der Gruppe einsehen und verwalten.</p>
+      <button class="text-button auth-switch" id="forgotPasswordButton" type="button">Passwort vergessen?</button>
+      <p class="auth-hint">Private Einträge sieht nur ihr Besitzer. Gruppenadmins sehen Gruppen- und Admin-Einträge.</p>
     </form>
   </dialog>
 
@@ -317,7 +375,18 @@
         <button type="button" class="close-button" id="closeAccountDialog" aria-label="Schließen">×</button>
       </div>
       <p id="accountEmail" class="muted"></p>
+      <form id="profileForm" class="account-form">
+        <label>Anzeigename<input id="accountDisplayName" type="text" minlength="2" maxlength="30" required></label>
+        <label>E-Mail<input id="accountEmailInput" type="email" required></label>
+        <button class="primary-button secondary submit-button" type="submit">Kontodaten speichern</button>
+      </form>
+      <form id="passwordForm" class="account-form">
+        <label>Neues Passwort<input id="newPassword" type="password" minlength="8" autocomplete="new-password" required></label>
+        <button class="primary-button secondary submit-button" type="submit">Passwort ändern</button>
+      </form>
+      <button class="primary-button secondary submit-button hidden" id="installAppButton" type="button">Lernzeit als App installieren</button>
       <button class="primary-button secondary submit-button" id="logoutButton" type="button">Abmelden</button>
+      <button class="danger-button submit-button" id="deleteAccountButton" type="button">Konto und Daten löschen</button>
     </div>
   </dialog>
 
