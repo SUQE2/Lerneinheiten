@@ -1,4 +1,4 @@
--- Lernzeit: private Gruppen mit maximal fünf Mitgliedern
+-- Lernzeit: private Gruppen mit maximal zehn Mitgliedern
 -- Diese Datei einmal vollständig im Supabase SQL Editor ausführen.
 
 create extension if not exists pgcrypto;
@@ -14,7 +14,7 @@ create table if not exists public.groups (
   name text not null check (char_length(name) between 2 and 40),
   invite_code text not null unique default upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8)),
   owner_id uuid not null references public.profiles(id) on delete cascade,
-  max_members smallint not null default 5 check (max_members between 2 and 5),
+  max_members smallint not null default 10 check (max_members between 2 and 10),
   created_at timestamptz not null default now()
 );
 
@@ -41,6 +41,12 @@ create index if not exists entries_user_date_idx on public.entries(user_id, entr
 create index if not exists group_members_group_idx on public.group_members(group_id);
 
 -- Erlaubt ein erneutes Ausführen dieses Schemas bei bereits angelegten Projekten.
+alter table public.groups drop constraint if exists groups_max_members_check;
+alter table public.groups alter column max_members set default 10;
+update public.groups set max_members = 10 where max_members < 10;
+alter table public.groups
+  add constraint groups_max_members_check check (max_members between 2 and 10);
+
 alter table public.group_members drop constraint if exists group_members_role_check;
 alter table public.group_members
   add constraint group_members_role_check check (role in ('owner', 'admin', 'member'));
@@ -173,7 +179,7 @@ begin
   where group_id = target_group.id;
 
   if current_size >= target_group.max_members then
-    raise exception 'Diese Gruppe hat bereits fünf Mitglieder.';
+    raise exception 'Diese Gruppe hat bereits zehn Mitglieder.';
   end if;
 
   insert into public.group_members (group_id, user_id, role)

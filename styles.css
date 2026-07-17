@@ -194,7 +194,7 @@ legend { margin-bottom: 8px; }
 .invite-box > span { display: block; color: rgba(255,255,255,.55); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
 .invite-box strong { display: inline-block; margin-top: 5px; font-size: 19px; letter-spacing: 2px; }
 .invite-box .text-button { float: right; margin-top: 5px; color: white; }
-.member-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 10px; }
+.member-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); gap: 10px; }
 .member-card { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: #faf8f2; }
 .member-card .avatar { margin-bottom: 20px; }
 .member-card strong, .member-card span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

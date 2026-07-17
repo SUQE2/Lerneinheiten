@@ -8,7 +8,7 @@ const categories = {
 const dayNames = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const monthNames = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const shortMonths = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
-const memberColors = ["#164f43", "#df7b4b", "#567e9b", "#9a6e8f", "#b49338"];
+const memberColors = ["#164f43", "#df7b4b", "#567e9b", "#9a6e8f", "#b49338", "#39736a", "#b45f45", "#526ba0", "#7f5d86", "#7a8535"];
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -165,7 +165,7 @@ function getWeekNumber(date) {
 
 function renderComparison(element, start, end) {
   if (!session) {
-    element.innerHTML = `<div class="comparison-cta"><div><strong>Vergleiche dich mit deinen Freunden</strong>Melde dich an und erstelle eine private Gruppe mit bis zu fünf Personen.</div><button class="primary-button" data-online-action="login">Online starten</button></div>`;
+    element.innerHTML = `<div class="comparison-cta"><div><strong>Vergleiche dich mit deinen Freunden</strong>Melde dich an und erstelle eine private Gruppe mit bis zu zehn Personen.</div><button class="primary-button" data-online-action="login">Online starten</button></div>`;
     return;
   }
   if (!group) {
@@ -326,6 +326,7 @@ function renderGroup() {
   if (!group) return;
   $("#groupName").textContent = group.name;
   $("#memberCount").textContent = members.length;
+  $("#groupMaxMembers").textContent = group.maxMembers;
   const ownMember = currentMember();
   const administrator = isGroupAdmin();
   const roleLabels = { owner: "Hauptadmin", admin: "Admin", member: "Mitglied" };
