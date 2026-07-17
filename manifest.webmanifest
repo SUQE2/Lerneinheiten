@@ -5,8 +5,8 @@
   "start_url": "./#woche",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f4f1ea",
-  "theme_color": "#164f43",
+  "background_color": "#f5eaf0",
+  "theme_color": "#342041",
   "icons": [
     {
       "src": "icon-192.png",

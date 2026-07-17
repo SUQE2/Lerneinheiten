@@ -8,7 +8,7 @@ const categories = {
 const dayNames = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const monthNames = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const shortMonths = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
-const memberColors = ["#164f43", "#df7b4b", "#567e9b", "#9a6e8f", "#b49338", "#39736a", "#b45f45", "#526ba0", "#7f5d86", "#7a8535"];
+const memberColors = ["#713c76", "#ee7658", "#665d9f", "#a64f70", "#efa94f", "#845c91", "#d65f68", "#5f568e", "#8f477a", "#ba694e"];
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -310,6 +310,7 @@ function renderYear() {
   const best = Math.max(...totals);
   const bestIndex = totals.indexOf(best);
   $("#yearLabel").textContent = yearCursor;
+  $("#yearHeroYear").textContent = yearCursor;
   $("#yearTotal").textContent = formatDuration(sum(items));
   $("#yearSessions").textContent = `${items.length} ${items.length === 1 ? "Eintrag" : "Einträge"}`;
   $("#yearActiveMonths").innerHTML = `${totals.filter(Boolean).length} <small>/ 12</small>`;
@@ -513,6 +514,7 @@ function showView(view) {
   $$(".nav-item").forEach(element => element.classList.toggle("active", element.dataset.view === view));
   $("#viewEyebrow").textContent = labels[view][0];
   $("#viewTitle").textContent = labels[view][1];
+  document.body.dataset.view = view;
   history.replaceState(null, "", `#${view}`);
 }
 

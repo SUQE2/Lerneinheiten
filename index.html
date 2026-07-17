@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f4f1ea">
+  <meta name="theme-color" content="#342041">
   <meta name="description" content="Privater Lerntracker für dich und deine Gruppen">
   <title>Lernzeit – Dein Lerntracker</title>
   <link rel="manifest" href="manifest.webmanifest">
@@ -65,7 +65,12 @@
             <button class="text-button jump-today" id="weekToday">Aktuelle Woche</button>
           </div>
 
-          <div class="stat-grid">
+          <article class="view-intro week-intro">
+            <div><p class="eyebrow">Sieben Tage · ein Rhythmus</p><h2>Heute zählt mehr als perfekt.</h2><p>Behalte dein Wochenziel im Blick und finde den nächsten kleinen Schritt.</p></div>
+            <span class="identity-mark">7</span>
+          </article>
+
+          <div class="stat-grid week-stats">
             <article class="stat-card featured">
               <span class="stat-label">Gesamt gelernt</span>
               <strong id="weekTotal">0 Min.</strong>
@@ -143,7 +148,11 @@
             <button class="icon-button" id="monthNext" aria-label="Nächster Monat">→</button>
             <button class="text-button jump-today" id="monthToday">Aktueller Monat</button>
           </div>
-          <div class="stat-grid three">
+          <article class="view-intro month-intro">
+            <div><p class="eyebrow">Dein Monat als Muster</p><h2>Wo aus einzelnen Tagen Gewohnheiten werden.</h2><p>Der Kalender zeigt dir auf einen Blick, wann du besonders konstant warst.</p></div>
+            <span class="identity-mark">▦</span>
+          </article>
+          <div class="stat-grid three month-stats">
             <article class="stat-card featured"><span class="stat-label">Gesamt im Monat</span><strong id="monthTotal">0 Min.</strong><span class="stat-detail" id="monthSessions">0 Einträge</span></article>
             <article class="stat-card"><span class="stat-label">Aktive Tage</span><strong id="monthActive">0</strong><span class="stat-detail">mit Lernzeit</span></article>
             <article class="stat-card"><span class="stat-label">Tagesdurchschnitt</span><strong id="monthAverage">0 Min.</strong><span class="stat-detail">pro aktivem Tag</span></article>
@@ -172,7 +181,11 @@
             <button class="icon-button" id="yearNext" aria-label="Nächstes Jahr">→</button>
             <button class="text-button jump-today" id="yearToday">Aktuelles Jahr</button>
           </div>
-          <div class="stat-grid three">
+          <article class="view-intro year-intro">
+            <div><p class="eyebrow">Deine Geschichte in Lernzeit</p><h2>Ein Jahr voller Fortschritt.</h2><p>Monate werden vergleichbar und deine stärksten Phasen sichtbar.</p></div>
+            <span class="identity-mark" id="yearHeroYear">–</span>
+          </article>
+          <div class="stat-grid three year-stats">
             <article class="stat-card featured"><span class="stat-label">Gesamt im Jahr</span><strong id="yearTotal">0 Min.</strong><span class="stat-detail" id="yearSessions">0 Einträge</span></article>
             <article class="stat-card"><span class="stat-label">Aktive Monate</span><strong id="yearActiveMonths">0 <small>/ 12</small></strong><span class="stat-detail">mit Lernzeit</span></article>
             <article class="stat-card"><span class="stat-label">Bester Monat</span><strong id="bestMonth">–</strong><span class="stat-detail" id="bestMonthDetail">Noch offen</span></article>
