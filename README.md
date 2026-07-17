@@ -1,6 +1,6 @@
 # Lernzeit
 
-Lernzeit ist ein geschützter Lerntracker für eine private Gruppe von bis zu zehn Personen. Wochen-, Monats-, Jahres- und Eintragsdaten sind erst nach einer Anmeldung sichtbar.
+Lernzeit ist ein geschützter Lerntracker für mehrere private Gruppen mit jeweils bis zu zehn Personen. Wochen-, Monats-, Jahres- und Eintragsdaten sind erst nach einer Anmeldung sichtbar.
 
 ## Lokal starten
 
@@ -32,8 +32,8 @@ Der öffentliche Browser-Key darf in der Web-App stehen. Niemals den `service_ro
 ## Was der Online-Modus kann
 
 - Registrierung und Anmeldung per E-Mail und Passwort
-- genau eine private Gruppe pro Konto
-- maximal zehn Gruppenmitglieder
+- mehrere private Gruppen pro Konto
+- pro Gruppe zwischen zwei und zehn Plätze, durch Admins einstellbar
 - Beitritt über einen achtstelligen Einladungs-Code
 - synchronisierte Lernzeiten auf mehreren Geräten
 - Wochen-, Monats- und Jahresvergleich
@@ -47,7 +47,7 @@ Der öffentliche Browser-Key darf in der Web-App stehen. Niemals den `service_ro
 
 ## Datenschutz und Zugriffsregeln
 
-Die Zugriffsregeln liegen in der Datenbank und nicht nur in der Oberfläche. Normale Mitglieder können ihr eigenes Profil, die eigene Gruppe und freigegebene Einträge ihrer Gruppenmitglieder abrufen. Hauptadmin und ernannte Admins können zusätzlich private Einträge der eigenen Gruppe sehen und verwalten. Nur der Hauptadmin kann Rollen vergeben und entziehen.
+Die Zugriffsregeln liegen in der Datenbank und nicht nur in der Oberfläche. Jeder Eintrag wird einer ausgewählten Gruppe zugeordnet. Normale Mitglieder können ihr eigenes Profil, ihre Gruppen und die dort freigegebenen Einträge abrufen. Hauptadmin und ernannte Admins können zusätzlich private Einträge ihrer jeweiligen Gruppe sehen und verwalten. Nur der Hauptadmin kann Rollen vergeben und entziehen.
 
 ## Vor einer öffentlichen Veröffentlichung
 

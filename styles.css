@@ -180,6 +180,7 @@ legend { margin-bottom: 8px; }
 .group-empty > p:not(.eyebrow) { max-width: 520px; margin: 13px auto 24px; color: var(--muted); font-size: 13px; line-height: 1.65; }
 .group-welcome { margin-bottom: 18px; }
 .group-welcome > p:last-child { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+.group-welcome #cancelGroupSetup { margin-top: 15px; }
 .group-setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .compact-form h2 { margin-bottom: 23px; }
 .compact-form label { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -190,10 +191,18 @@ legend { margin-bottom: 8px; }
 .group-hero .eyebrow { color: rgba(255,255,255,.58); }
 .group-hero h2 { font-size: 32px; }
 .group-hero p:last-child { margin: 8px 0 0; color: rgba(255,255,255,.6); font-size: 11px; }
+.group-switch-row { display: flex; align-items: end; gap: 10px; margin: 12px 0 10px; }
+.group-switch-row label { color: rgba(255,255,255,.65); font-size: 9px; font-weight: 700; }
+.group-switch-row select { display: block; min-width: 180px; margin-top: 5px; padding: 7px 28px 7px 9px; border-color: rgba(255,255,255,.25); background: rgba(255,255,255,.1); color: white; font-size: 11px; }
+.group-switch-row select option { color: var(--ink); }
+.group-switch-row .text-button { padding-bottom: 8px; color: white; white-space: nowrap; }
 .invite-box { min-width: 205px; padding: 15px 18px; border: 1px solid rgba(255,255,255,.17); border-radius: 13px; background: rgba(255,255,255,.08); }
 .invite-box > span { display: block; color: rgba(255,255,255,.55); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
 .invite-box strong { display: inline-block; margin-top: 5px; font-size: 19px; letter-spacing: 2px; }
 .invite-box .text-button { float: right; margin-top: 5px; color: white; }
+.capacity-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; clear: both; padding-top: 13px; color: rgba(255,255,255,.65); font-size: 9px; font-weight: 700; }
+.capacity-control select { padding: 6px 25px 6px 8px; border-color: rgba(255,255,255,.25); background: rgba(255,255,255,.1); color: white; font-size: 10px; }
+.capacity-control select option { color: var(--ink); }
 .member-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); gap: 10px; }
 .member-card { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: #faf8f2; }
 .member-card .avatar { margin-bottom: 20px; }
@@ -270,5 +279,8 @@ legend { margin-bottom: 8px; }
   .group-setup-grid { grid-template-columns: 1fr; }
   .group-hero { display: block; }
   .invite-box { margin-top: 20px; }
+  .group-switch-row { align-items: stretch; flex-direction: column; }
+  .group-switch-row select { width: 100%; }
+  .group-switch-row .text-button { align-self: flex-start; }
   .member-grid { grid-template-columns: 1fr 1fr; }
 }

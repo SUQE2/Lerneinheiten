@@ -200,11 +200,12 @@
             <button class="primary-button" id="groupLoginButton" type="button">Anmelden oder registrieren</button>
           </div>
 
-          <div id="groupNoMembership" class="group-setup hidden">
+          <div id="groupSetup" class="group-setup hidden">
             <article class="panel group-welcome">
               <p class="eyebrow">Willkommen, <span id="welcomeName"></span></p>
-              <h2>Starte deine Lerngruppe</h2>
-              <p>Du kannst genau einer privaten Gruppe mit insgesamt höchstens zehn Personen angehören.</p>
+              <h2 id="groupSetupTitle">Starte deine Lerngruppe</h2>
+              <p>Du kannst mehrere private Gruppen erstellen oder ihnen beitreten. Jede Gruppe kann 2 bis 10 Plätze haben.</p>
+              <button class="text-button hidden" id="cancelGroupSetup" type="button">← Zurück zur Gruppe</button>
             </article>
             <div class="group-setup-grid">
               <form class="panel compact-form" id="createGroupForm">
@@ -226,6 +227,10 @@
             <article class="panel group-hero">
               <div>
                 <p class="eyebrow">Deine private Gruppe · <span id="groupRoleLabel">Mitglied</span></p>
+                <div class="group-switch-row">
+                  <label>Aktive Gruppe<select id="groupSelector" aria-label="Aktive Gruppe auswählen"></select></label>
+                  <button class="text-button" id="openGroupSetup" type="button">＋ Weitere Gruppe</button>
+                </div>
                 <h2 id="groupName">–</h2>
                 <p><span id="memberCount">0</span> von <span id="groupMaxMembers">10</span> Plätzen belegt</p>
               </div>
@@ -233,6 +238,12 @@
                 <span>Einladungs-Code</span>
                 <strong id="inviteCode">–</strong>
                 <button class="text-button" id="copyInviteButton" type="button">Code kopieren</button>
+                <label class="capacity-control" id="capacityControl">Plätze
+                  <select id="groupCapacitySelect" aria-label="Maximale Mitgliederzahl">
+                    <option>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
+                    <option>7</option><option>8</option><option>9</option><option>10</option>
+                  </select>
+                </label>
               </div>
             </article>
             <article class="panel">
@@ -272,7 +283,7 @@
       </div>
       <label>Thema <span class="optional">optional</span><input type="text" id="entryTopic" maxlength="80" placeholder="z. B. Prüfungsvorbereitung"></label>
       <fieldset id="visibilityField" class="hidden">
-        <legend>Sichtbarkeit</legend>
+        <legend>Sichtbarkeit in <span id="entryGroupName">deiner Gruppe</span></legend>
         <div class="visibility-picker">
           <label><input type="radio" name="visibility" value="group" checked><span><strong>Mit Gruppe teilen</strong><small>Dauer, Bereich und Thema sind sichtbar</small></span></label>
           <label><input type="radio" name="visibility" value="private"><span><strong>Nur für mich und Admins</strong><small>Normale Mitglieder sehen diesen Eintrag nicht</small></span></label>

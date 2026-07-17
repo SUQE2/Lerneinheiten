@@ -20,7 +20,7 @@ create table if not exists public.groups (
 
 create table if not exists public.group_members (
   group_id uuid not null references public.groups(id) on delete cascade,
-  user_id uuid not null unique references public.profiles(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
   role text not null default 'member' check (role in ('owner', 'admin', 'member')),
   joined_at timestamptz not null default now(),
   primary key (group_id, user_id)
@@ -29,6 +29,7 @@ create table if not exists public.group_members (
 create table if not exists public.entries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
+  group_id uuid references public.groups(id) on delete set null,
   entry_date date not null,
   category text not null check (category in ('studium', 'arbeit', 'persoenlich', 'sonstiges')),
   minutes integer not null check (minutes between 1 and 1439),
@@ -43,13 +44,27 @@ create index if not exists group_members_group_idx on public.group_members(group
 -- Erlaubt ein erneutes Ausführen dieses Schemas bei bereits angelegten Projekten.
 alter table public.groups drop constraint if exists groups_max_members_check;
 alter table public.groups alter column max_members set default 10;
-update public.groups set max_members = 10 where max_members < 10;
 alter table public.groups
   add constraint groups_max_members_check check (max_members between 2 and 10);
 
+alter table public.group_members drop constraint if exists group_members_user_id_key;
 alter table public.group_members drop constraint if exists group_members_role_check;
 alter table public.group_members
   add constraint group_members_role_check check (role in ('owner', 'admin', 'member'));
+
+alter table public.entries
+  add column if not exists group_id uuid references public.groups(id) on delete set null;
+update public.entries entry
+set group_id = membership.group_id
+from public.group_members membership
+where entry.group_id is null
+  and membership.user_id = entry.user_id
+  and 1 = (
+    select count(*)
+    from public.group_members memberships
+    where memberships.user_id = entry.user_id
+  );
+create index if not exists entries_group_date_idx on public.entries(group_id, entry_date desc);
 
 create or replace function public.is_group_member(target_group_id uuid)
 returns boolean
@@ -79,7 +94,7 @@ as $$
   );
 $$;
 
-create or replace function public.is_group_admin_for_user(other_user_id uuid)
+create or replace function public.is_group_admin(target_group_id uuid)
 returns boolean
 language sql
 stable
@@ -88,11 +103,10 @@ set search_path = ''
 as $$
   select exists (
     select 1
-    from public.group_members administrator
-    join public.group_members target on target.group_id = administrator.group_id
-    where administrator.user_id = (select auth.uid())
-      and administrator.role in ('owner', 'admin')
-      and target.user_id = other_user_id
+    from public.group_members
+    where group_id = target_group_id
+      and user_id = (select auth.uid())
+      and role in ('owner', 'admin')
   );
 $$;
 
@@ -134,10 +148,6 @@ begin
   if char_length(cleaned_name) < 2 or char_length(cleaned_name) > 40 then
     raise exception 'Der Gruppenname muss 2 bis 40 Zeichen lang sein.';
   end if;
-  if exists (select 1 from public.group_members where user_id = (select auth.uid())) then
-    raise exception 'Du bist bereits Mitglied einer Gruppe.';
-  end if;
-
   insert into public.groups (name, owner_id)
   values (cleaned_name, (select auth.uid()))
   returning id into new_group_id;
@@ -161,10 +171,6 @@ begin
   if (select auth.uid()) is null then
     raise exception 'Du musst angemeldet sein.';
   end if;
-  if exists (select 1 from public.group_members where user_id = (select auth.uid())) then
-    raise exception 'Du bist bereits Mitglied einer Gruppe.';
-  end if;
-
   select * into target_group
   from public.groups
   where invite_code = upper(trim(invitation_code))
@@ -174,12 +180,19 @@ begin
     raise exception 'Der Einladungs-Code ist ungültig.';
   end if;
 
+  if exists (
+    select 1 from public.group_members
+    where group_id = target_group.id and user_id = (select auth.uid())
+  ) then
+    raise exception 'Du bist bereits Mitglied dieser Gruppe.';
+  end if;
+
   select count(*) into current_size
   from public.group_members
   where group_id = target_group.id;
 
   if current_size >= target_group.max_members then
-    raise exception 'Diese Gruppe hat bereits zehn Mitglieder.';
+    raise exception 'Diese Gruppe hat ihre maximale Mitgliederzahl erreicht.';
   end if;
 
   insert into public.group_members (group_id, user_id, role)
@@ -188,7 +201,7 @@ begin
 end;
 $$;
 
-create or replace function public.get_group_invite_code()
+create or replace function public.get_group_invite_code(target_group_id uuid)
 returns text
 language plpgsql
 stable
@@ -201,7 +214,8 @@ begin
   select groups.invite_code into result
   from public.groups
   join public.group_members on group_members.group_id = groups.id
-  where group_members.user_id = (select auth.uid())
+  where groups.id = target_group_id
+    and group_members.user_id = (select auth.uid())
     and group_members.role in ('owner', 'admin');
 
   if result is null then
@@ -211,31 +225,31 @@ begin
 end;
 $$;
 
-create or replace function public.set_group_member_role(target_user_id uuid, new_role text)
+create or replace function public.set_group_member_role(target_group_id uuid, target_user_id uuid, new_role text)
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
-  owners_group_id uuid;
   target_role text;
 begin
-  if new_role not in ('admin', 'member') then
+  if new_role is null or new_role not in ('admin', 'member') then
     raise exception 'Diese Rolle ist nicht erlaubt.';
   end if;
 
-  select group_id into owners_group_id
-  from public.group_members
-  where user_id = (select auth.uid()) and role = 'owner';
-
-  if owners_group_id is null then
+  if not exists (
+    select 1 from public.group_members
+    where group_id = target_group_id
+      and user_id = (select auth.uid())
+      and role = 'owner'
+  ) then
     raise exception 'Nur der Hauptadmin darf Rollen vergeben.';
   end if;
 
   select role into target_role
   from public.group_members
-  where group_id = owners_group_id and user_id = target_user_id;
+  where group_id = target_group_id and user_id = target_user_id;
 
   if target_role is null then
     raise exception 'Dieses Konto gehört nicht zu deiner Gruppe.';
@@ -246,32 +260,33 @@ begin
 
   update public.group_members
   set role = new_role
-  where group_id = owners_group_id and user_id = target_user_id;
+  where group_id = target_group_id and user_id = target_user_id;
 end;
 $$;
 
-create or replace function public.remove_group_member(target_user_id uuid)
+create or replace function public.remove_group_member(target_group_id uuid, target_user_id uuid)
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
-  managers_group_id uuid;
   managers_role text;
   target_role text;
 begin
-  select group_id, role into managers_group_id, managers_role
+  select role into managers_role
   from public.group_members
-  where user_id = (select auth.uid()) and role in ('owner', 'admin');
+  where group_id = target_group_id
+    and user_id = (select auth.uid())
+    and role in ('owner', 'admin');
 
-  if managers_group_id is null then
+  if managers_role is null then
     raise exception 'Du darfst keine Mitglieder entfernen.';
   end if;
 
   select role into target_role
   from public.group_members
-  where group_id = managers_group_id and user_id = target_user_id;
+  where group_id = target_group_id and user_id = target_user_id;
 
   if target_role is null then
     raise exception 'Dieses Konto gehört nicht zu deiner Gruppe.';
@@ -280,8 +295,46 @@ begin
     raise exception 'Dieses Mitglied darfst du nicht entfernen.';
   end if;
 
+  update public.entries
+  set group_id = null
+  where group_id = target_group_id and user_id = target_user_id;
+
   delete from public.group_members
-  where group_id = managers_group_id and user_id = target_user_id;
+  where group_id = target_group_id and user_id = target_user_id;
+end;
+$$;
+
+create or replace function public.set_group_max_members(target_group_id uuid, new_max_members smallint)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_size integer;
+begin
+  if not public.is_group_admin(target_group_id) then
+    raise exception 'Nur Admins dürfen die Gruppengröße ändern.';
+  end if;
+  if new_max_members is null or new_max_members < 2 or new_max_members > 10 then
+    raise exception 'Die Gruppengröße muss zwischen 2 und 10 liegen.';
+  end if;
+
+  perform 1 from public.groups
+  where id = target_group_id
+  for update;
+
+  select count(*) into current_size
+  from public.group_members
+  where group_id = target_group_id;
+
+  if new_max_members < current_size then
+    raise exception 'Die Gruppe hat bereits mehr Mitglieder als diese Platzanzahl.';
+  end if;
+
+  update public.groups
+  set max_members = new_max_members
+  where id = target_group_id;
 end;
 $$;
 
@@ -316,25 +369,31 @@ create policy "visible entries for group" on public.entries
   for select to authenticated
   using (
     user_id = (select auth.uid())
-    or (visibility = 'group' and public.shares_group_with(user_id))
-    or public.is_group_admin_for_user(user_id)
+    or (visibility = 'group' and public.is_group_member(group_id))
+    or public.is_group_admin(group_id)
   );
 
 drop policy if exists "users create own entries" on public.entries;
 create policy "users create own entries" on public.entries
   for insert to authenticated
-  with check (user_id = (select auth.uid()));
+  with check (
+    user_id = (select auth.uid())
+    and (group_id is null or public.is_group_member(group_id))
+  );
 
 drop policy if exists "users update own entries" on public.entries;
 create policy "users update own entries" on public.entries
   for update to authenticated
-  using (user_id = (select auth.uid()) or public.is_group_admin_for_user(user_id))
-  with check (user_id = (select auth.uid()) or public.is_group_admin_for_user(user_id));
+  using (user_id = (select auth.uid()) or public.is_group_admin(group_id))
+  with check (
+    (user_id = (select auth.uid()) and (group_id is null or public.is_group_member(group_id)))
+    or public.is_group_admin(group_id)
+  );
 
 drop policy if exists "users delete own entries" on public.entries;
 create policy "users delete own entries" on public.entries
   for delete to authenticated
-  using (user_id = (select auth.uid()) or public.is_group_admin_for_user(user_id));
+  using (user_id = (select auth.uid()) or public.is_group_admin(group_id));
 
 revoke all on public.profiles, public.groups, public.group_members, public.entries from anon;
 grant select, update on public.profiles to authenticated;
@@ -345,20 +404,22 @@ grant select, insert, update, delete on public.entries to authenticated;
 
 revoke all on function public.is_group_member(uuid) from public;
 revoke all on function public.shares_group_with(uuid) from public;
-revoke all on function public.is_group_admin_for_user(uuid) from public;
+revoke all on function public.is_group_admin(uuid) from public;
 revoke all on function public.create_private_group(text) from public;
 revoke all on function public.join_private_group(text) from public;
-revoke all on function public.get_group_invite_code() from public;
-revoke all on function public.set_group_member_role(uuid, text) from public;
-revoke all on function public.remove_group_member(uuid) from public;
+revoke all on function public.get_group_invite_code(uuid) from public;
+revoke all on function public.set_group_member_role(uuid, uuid, text) from public;
+revoke all on function public.remove_group_member(uuid, uuid) from public;
+revoke all on function public.set_group_max_members(uuid, smallint) from public;
 grant execute on function public.is_group_member(uuid) to authenticated;
 grant execute on function public.shares_group_with(uuid) to authenticated;
-grant execute on function public.is_group_admin_for_user(uuid) to authenticated;
+grant execute on function public.is_group_admin(uuid) to authenticated;
 grant execute on function public.create_private_group(text) to authenticated;
 grant execute on function public.join_private_group(text) to authenticated;
-grant execute on function public.get_group_invite_code() to authenticated;
-grant execute on function public.set_group_member_role(uuid, text) to authenticated;
-grant execute on function public.remove_group_member(uuid) to authenticated;
+grant execute on function public.get_group_invite_code(uuid) to authenticated;
+grant execute on function public.set_group_member_role(uuid, uuid, text) to authenticated;
+grant execute on function public.remove_group_member(uuid, uuid) to authenticated;
+grant execute on function public.set_group_max_members(uuid, smallint) to authenticated;
 
 do $$
 begin
@@ -373,5 +434,11 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'group_members'
   ) then
     alter publication supabase_realtime add table public.group_members;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'groups'
+  ) then
+    alter publication supabase_realtime add table public.groups;
   end if;
 end $$;

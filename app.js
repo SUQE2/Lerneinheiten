@@ -26,8 +26,10 @@ let entries = [];
 let sharedEntries = [];
 let session = null;
 let profile = null;
+let groups = [];
 let group = null;
 let members = [];
+let showGroupSetup = false;
 let realtimeChannel = null;
 let refreshTimer = null;
 let authMode = "login";
@@ -119,6 +121,10 @@ function isGroupAdmin() {
   return ["owner", "admin"].includes(currentMember()?.role);
 }
 
+function activeGroupStorageKey() {
+  return `lernzeit.active-group.${session?.user.id || "guest"}`;
+}
+
 function initials(name) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "?";
 }
@@ -173,7 +179,9 @@ function renderComparison(element, start, end) {
     return;
   }
 
-  const publicEntries = entriesBetween(start, end, sharedEntries).filter(entry => entry.visibility === "group");
+  const publicEntries = entriesBetween(start, end, sharedEntries).filter(entry =>
+    entry.groupId === group.id && entry.visibility === "group"
+  );
   const rows = members.map(member => {
     const items = publicEntries.filter(entry => entry.ownerId === member.id);
     return { member, items, total: sum(items) };
@@ -317,13 +325,20 @@ function currentStreak() {
 }
 
 function renderGroup() {
+  const hasGroups = groups.length > 0;
+  const setupVisible = Boolean(session) && (!hasGroups || showGroupSetup);
   $("#groupLoggedOut").classList.toggle("hidden", Boolean(session));
-  $("#groupNoMembership").classList.toggle("hidden", !session || Boolean(group));
-  $("#groupDashboard").classList.toggle("hidden", !session || !group);
+  $("#groupSetup").classList.toggle("hidden", !setupVisible);
+  $("#groupDashboard").classList.toggle("hidden", !session || !group || setupVisible);
   if (!session) return;
 
   $("#welcomeName").textContent = profile?.displayName || "";
+  $("#groupSetupTitle").textContent = hasGroups ? "Weitere Gruppe hinzufügen" : "Starte deine Lerngruppe";
+  $("#cancelGroupSetup").classList.toggle("hidden", !hasGroups);
   if (!group) return;
+  $("#groupSelector").innerHTML = groups.map(item =>
+    `<option value="${item.id}" ${item.id === group.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`
+  ).join("");
   $("#groupName").textContent = group.name;
   $("#memberCount").textContent = members.length;
   $("#groupMaxMembers").textContent = group.maxMembers;
@@ -333,13 +348,17 @@ function renderGroup() {
   $("#groupRoleLabel").textContent = roleLabels[ownMember?.role] || "Mitglied";
   $("#inviteBox").classList.toggle("hidden", !administrator);
   $("#inviteCode").textContent = group.inviteCode || "–";
+  $("#groupCapacitySelect").value = String(group.maxMembers);
+  $("#groupCapacitySelect").disabled = false;
   $("#groupActivityNote").textContent = administrator
     ? "Admins sehen freigegebene und private Einträge"
     : "Du siehst nur freigegebene Einträge";
 
   const start = startOfWeek(new Date());
   const end = addDays(start, 6);
-  const publicWeekEntries = entriesBetween(start, end, sharedEntries).filter(entry => entry.visibility === "group");
+  const publicWeekEntries = entriesBetween(start, end, sharedEntries).filter(entry =>
+    entry.groupId === group.id && entry.visibility === "group"
+  );
   $("#groupMembers").innerHTML = members.map(member => {
     const total = sum(publicWeekEntries.filter(entry => entry.ownerId === member.id));
     const canSetRole = ownMember?.role === "owner" && member.role !== "owner";
@@ -363,9 +382,10 @@ function renderGroup() {
     </div>`;
   }).join("");
 
+  const groupEntries = sharedEntries.filter(entry => entry.groupId === group.id);
   const visibleActivity = (administrator
-    ? sharedEntries
-    : sharedEntries.filter(entry => entry.visibility === "group"))
+    ? groupEntries
+    : groupEntries.filter(entry => entry.visibility === "group"))
     .slice(0, 20);
   $("#groupActivity").innerHTML = entryRows(
     visibleActivity,
@@ -422,6 +442,7 @@ function openDialog() {
   $("#entryDate").value = localISO(new Date());
   $("#formError").textContent = "";
   $("#visibilityField").classList.toggle("hidden", !session || !group);
+  $("#entryGroupName").textContent = group?.name || "deiner Gruppe";
   const visibility = $(`input[name=visibility][value=${group ? "group" : "private"}]`);
   if (visibility) visibility.checked = true;
   $("#entryDialog").showModal();
@@ -468,6 +489,7 @@ function mapCloudEntry(row) {
   return {
     id: row.id,
     ownerId: row.user_id,
+    groupId: row.group_id,
     date: row.entry_date,
     category: row.category,
     minutes: row.minutes,
@@ -484,6 +506,7 @@ async function migrateLocalEntries() {
   const rows = localEntries.map(entry => ({
     id: crypto.randomUUID(),
     user_id: session.user.id,
+    group_id: group?.id || null,
     entry_date: entry.date,
     category: entry.category,
     minutes: entry.minutes,
@@ -500,35 +523,55 @@ async function migrateLocalEntries() {
 async function loadCloudState({ migrate = false } = {}) {
   if (!session) return;
   try {
-    if (migrate) await migrateLocalEntries();
     const userId = session.user.id;
     const profileResult = await cloud.from("profiles").select("id, display_name").eq("id", userId).single();
     if (profileResult.error) throw profileResult.error;
     profile = { id: profileResult.data.id, displayName: profileResult.data.display_name };
 
-    const membershipResult = await cloud.from("group_members").select("group_id, role, joined_at").eq("user_id", userId).maybeSingle();
+    const membershipResult = await cloud.from("group_members")
+      .select("group_id, role, joined_at")
+      .eq("user_id", userId)
+      .order("joined_at");
     if (membershipResult.error) throw membershipResult.error;
+    groups = [];
     group = null;
     members = [];
 
-    if (membershipResult.data) {
-      const groupId = membershipResult.data.group_id;
-      const administrator = ["owner", "admin"].includes(membershipResult.data.role);
-      const [groupResult, membershipsResult, inviteResult] = await Promise.all([
-        cloud.from("groups").select("id, name, owner_id, max_members").eq("id", groupId).single(),
-        cloud.from("group_members").select("user_id, role, joined_at").eq("group_id", groupId).order("joined_at"),
-        administrator ? cloud.rpc("get_group_invite_code") : Promise.resolve({ data: null, error: null })
-      ]);
+    if (membershipResult.data.length) {
+      const membershipByGroup = new Map(membershipResult.data.map(item => [item.group_id, item]));
+      const groupIds = membershipResult.data.map(item => item.group_id);
+      const groupResult = await cloud.from("groups")
+        .select("id, name, owner_id, max_members")
+        .in("id", groupIds);
       if (groupResult.error) throw groupResult.error;
+      const groupDataById = new Map(groupResult.data.map(item => [item.id, item]));
+      groups = groupIds.map(id => {
+        const item = groupDataById.get(id);
+        const membership = membershipByGroup.get(id);
+        return item ? {
+          id: item.id,
+          name: item.name,
+          inviteCode: null,
+          ownerId: item.owner_id,
+          maxMembers: item.max_members,
+          role: membership.role,
+          joinedAt: membership.joined_at
+        } : null;
+      }).filter(Boolean);
+
+      const storedGroupId = localStorage.getItem(activeGroupStorageKey());
+      group = groups.find(item => item.id === storedGroupId) || groups[0];
+      localStorage.setItem(activeGroupStorageKey(), group.id);
+      const administrator = ["owner", "admin"].includes(group.role);
+      const [membershipsResult, inviteResult] = await Promise.all([
+        cloud.from("group_members").select("user_id, role, joined_at").eq("group_id", group.id).order("joined_at"),
+        administrator
+          ? cloud.rpc("get_group_invite_code", { target_group_id: group.id })
+          : Promise.resolve({ data: null, error: null })
+      ]);
       if (membershipsResult.error) throw membershipsResult.error;
       if (inviteResult.error) throw inviteResult.error;
-      group = {
-        id: groupResult.data.id,
-        name: groupResult.data.name,
-        inviteCode: inviteResult.data,
-        ownerId: groupResult.data.owner_id,
-        maxMembers: groupResult.data.max_members
-      };
+      group.inviteCode = inviteResult.data;
       const ids = membershipsResult.data.map(item => item.user_id);
       const profilesResult = await cloud.from("profiles").select("id, display_name").in("id", ids);
       if (profilesResult.error) throw profilesResult.error;
@@ -541,8 +584,10 @@ async function loadCloudState({ migrate = false } = {}) {
       }));
     }
 
+    if (migrate) await migrateLocalEntries();
+
     const entriesResult = await cloud.from("entries")
-      .select("id, user_id, entry_date, category, minutes, topic, visibility, created_at")
+      .select("id, user_id, group_id, entry_date, category, minutes, topic, visibility, created_at")
       .order("entry_date", { ascending: false })
       .order("created_at", { ascending: false });
     if (entriesResult.error) throw entriesResult.error;
@@ -567,6 +612,10 @@ function setupRealtime() {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => loadCloudState(), 250);
     })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "groups" }, () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => loadCloudState(), 250);
+    })
     .subscribe();
 }
 
@@ -574,8 +623,10 @@ async function handleSession(nextSession, migrate = false) {
   session = nextSession;
   if (!session) {
     profile = null;
+    groups = [];
     group = null;
     members = [];
+    showGroupSetup = false;
     sharedEntries = [];
     entries = [];
     if (realtimeChannel) await cloud.removeChannel(realtimeChannel);
@@ -644,6 +695,7 @@ $("#entryForm").addEventListener("submit", async event => {
     category: $("input[name=category]:checked").value,
     minutes: total,
     topic: $("#entryTopic").value.trim(),
+    groupId: group?.id || null,
     visibility: session && group ? $("input[name=visibility]:checked").value : "private",
     createdAt: Date.now()
   };
@@ -651,6 +703,7 @@ $("#entryForm").addEventListener("submit", async event => {
   const { error } = await cloud.from("entries").insert({
     id: entry.id,
     user_id: session.user.id,
+    group_id: entry.groupId,
     entry_date: entry.date,
     category: entry.category,
     minutes: entry.minutes,
@@ -675,7 +728,10 @@ document.addEventListener("click", async event => {
   const removeButton = event.target.closest("[data-remove-member]");
   if (removeButton) {
     if (!confirm(`${removeButton.dataset.memberName} wirklich aus der Gruppe entfernen?`)) return;
-    const { error } = await cloud.rpc("remove_group_member", { target_user_id: removeButton.dataset.removeMember });
+    const { error } = await cloud.rpc("remove_group_member", {
+      target_group_id: group.id,
+      target_user_id: removeButton.dataset.removeMember
+    });
     if (error) return showToast(readableError(error));
     await loadCloudState();
     showToast("Mitglied wurde entfernt");
@@ -708,6 +764,7 @@ document.addEventListener("change", async event => {
   if (!roleSelect) return;
   roleSelect.disabled = true;
   const { error } = await cloud.rpc("set_group_member_role", {
+    target_group_id: group.id,
     target_user_id: roleSelect.dataset.memberRole,
     new_role: roleSelect.value
   });
@@ -731,6 +788,34 @@ $("#yearNext").addEventListener("click", () => { yearCursor++; renderYear(); });
 $("#yearToday").addEventListener("click", () => { yearCursor = new Date().getFullYear(); renderYear(); });
 $("#entrySearch").addEventListener("input", renderAllEntries);
 $("#categoryFilter").addEventListener("change", renderAllEntries);
+$("#groupSelector").addEventListener("change", async event => {
+  localStorage.setItem(activeGroupStorageKey(), event.target.value);
+  await loadCloudState();
+  showToast("Aktive Gruppe gewechselt");
+});
+$("#groupCapacitySelect").addEventListener("change", async event => {
+  const previous = group.maxMembers;
+  event.target.disabled = true;
+  const { error } = await cloud.rpc("set_group_max_members", {
+    target_group_id: group.id,
+    new_max_members: Number(event.target.value)
+  });
+  if (error) {
+    event.target.value = String(previous);
+    event.target.disabled = false;
+    return showToast(readableError(error));
+  }
+  await loadCloudState();
+  showToast("Platzanzahl wurde geändert");
+});
+$("#openGroupSetup").addEventListener("click", () => {
+  showGroupSetup = true;
+  renderGroup();
+});
+$("#cancelGroupSetup").addEventListener("click", () => {
+  showGroupSetup = false;
+  renderGroup();
+});
 
 $("#accountButton").addEventListener("click", () => session ? $("#accountDialog").showModal() : openAuthDialog());
 $("#groupLoginButton").addEventListener("click", openAuthDialog);
@@ -779,12 +864,14 @@ $("#logoutButton").addEventListener("click", async () => {
 $("#createGroupForm").addEventListener("submit", async event => {
   event.preventDefault();
   $("#createGroupError").textContent = "";
-  const { error } = await cloud.rpc("create_private_group", { group_name: $("#newGroupName").value.trim() });
+  const { data, error } = await cloud.rpc("create_private_group", { group_name: $("#newGroupName").value.trim() });
   if (error) {
     $("#createGroupError").textContent = readableError(error);
     return;
   }
   $("#createGroupForm").reset();
+  localStorage.setItem(activeGroupStorageKey(), data);
+  showGroupSetup = false;
   await loadCloudState();
   showToast("Deine Gruppe ist bereit");
 });
@@ -792,12 +879,14 @@ $("#createGroupForm").addEventListener("submit", async event => {
 $("#joinGroupForm").addEventListener("submit", async event => {
   event.preventDefault();
   $("#joinGroupError").textContent = "";
-  const { error } = await cloud.rpc("join_private_group", { invitation_code: $("#inviteCodeInput").value.trim() });
+  const { data, error } = await cloud.rpc("join_private_group", { invitation_code: $("#inviteCodeInput").value.trim() });
   if (error) {
     $("#joinGroupError").textContent = readableError(error);
     return;
   }
   $("#joinGroupForm").reset();
+  localStorage.setItem(activeGroupStorageKey(), data);
+  showGroupSetup = false;
   await loadCloudState();
   showToast("Du bist der Gruppe beigetreten");
 });
