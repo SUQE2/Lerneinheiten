@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/

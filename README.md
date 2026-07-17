@@ -29,6 +29,12 @@ window.LERNZEIT_CONFIG = {
 
 Der öffentliche Browser-Key darf in der Web-App stehen. Niemals den `service_role`-Key in `config.js` eintragen; dieser würde die Datenbankregeln umgehen.
 
+## Automatische Datenbank-Updates
+
+Der aktuelle Datenbankstand liegt zusätzlich als Ausgangsmigration unter `supabase/migrations/`. Wenn die Supabase-GitHub-Integration mit dem Repository verbunden und **Deploy to production** aktiviert ist, führt Supabase neue Migrationen aus diesem Ordner beim Push auf `main` automatisch aus.
+
+Für spätere Datenbankänderungen wird jeweils eine neue, zeitlich benannte SQL-Datei angelegt. Bereits veröffentlichte Migrationsdateien werden nicht nachträglich verändert. Zugangsdaten oder Datenbankpasswörter gehören niemals in das Repository.
+
 ## Was der Online-Modus kann
 
 - Registrierung und Anmeldung per E-Mail und Passwort
