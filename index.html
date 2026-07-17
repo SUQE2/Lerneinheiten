@@ -14,7 +14,9 @@
   <div class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="#woche" aria-label="Lernzeit Startseite">
-        <span class="brand-mark" aria-hidden="true">L</span>
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M4.5 7.5c4.6-1.5 8.3-.7 11.5 2.2v16.8c-3.2-2.9-6.9-3.7-11.5-2.2zM27.5 7.5c-4.6-1.5-8.3-.7-11.5 2.2v16.8c3.2-2.9 6.9-3.7 11.5-2.2z"/><path class="brand-check" d="m19.5 17.4 2.3 2.3 4.5-5"/></svg>
+        </span>
         <span>Lernzeit</span>
       </a>
 
@@ -388,6 +390,19 @@
         <button type="button" class="close-button" id="closeAccountDialog" aria-label="Schließen">×</button>
       </div>
       <p id="accountEmail" class="muted"></p>
+      <section class="appearance-settings" aria-labelledby="appearanceTitle">
+        <p class="eyebrow">Erscheinungsbild</p>
+        <h3 id="appearanceTitle">Dein Hintergrund</h3>
+        <div class="theme-picker">
+          <button class="theme-choice" type="button" data-theme-choice="sunset" aria-pressed="false">
+            <span class="theme-preview sunset-preview"></span><strong>Sonnenuntergang</strong><small>Warm und farbenfroh</small>
+          </button>
+          <button class="theme-choice" type="button" data-theme-choice="noir" aria-pressed="false">
+            <span class="theme-preview noir-preview"></span><strong>Wayne Noir</strong><small>Grau und seriös</small>
+          </button>
+        </div>
+        <p class="muted" id="themeSaveNote">Die Auswahl wird in deinem Konto gespeichert.</p>
+      </section>
       <form id="profileForm" class="account-form">
         <label>Anzeigename<input id="accountDisplayName" type="text" minlength="2" maxlength="30" required></label>
         <label>E-Mail<input id="accountEmailInput" type="email" required></label>

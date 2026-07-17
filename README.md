@@ -52,6 +52,7 @@ Der öffentliche Browser-Key darf in der Web-App stehen. Niemals den `service_ro
 - Admin-Protokoll für Rollen-, Mitglieder- und Einladungsänderungen
 - Anzeigename, E-Mail und Passwort verwalten sowie das eigene Konto löschen
 - als App installierbar; die Oberfläche öffnet sich auch offline, die Synchronisierung benötigt Internet
+- persönliche Hintergrundwahl zwischen **Sonnenuntergang** und **Wayne Noir**, im Konto geräteübergreifend gespeichert
 - automatische, private Übernahme vorhandener lokaler Einträge beim ersten Login
 
 ## Datenschutz und Zugriffsregeln

@@ -1,4 +1,5 @@
 const STORAGE_KEY = "lernzeit.entries.v1";
+const THEME_KEY = "lernzeit.appearance-theme";
 const categories = {
   studium: { label: "Studium", color: "var(--primary)" },
   arbeit: { label: "Arbeit", color: "var(--orange)" },
@@ -37,6 +38,7 @@ let weeklyGoalMinutes = 600;
 let editingEntryId = null;
 let editingEntryOwnerId = null;
 let installPrompt = null;
+let appearanceTheme = localStorage.getItem(THEME_KEY) || "sunset";
 let showGroupSetup = false;
 let realtimeChannel = null;
 let refreshTimer = null;
@@ -110,6 +112,19 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, char => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
   })[char]);
+}
+
+function applyTheme(theme, persist = true) {
+  appearanceTheme = ["sunset", "noir"].includes(theme) ? theme : "sunset";
+  document.body.dataset.theme = appearanceTheme;
+  if (persist) localStorage.setItem(THEME_KEY, appearanceTheme);
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) themeColor.content = appearanceTheme === "noir" ? "#171a1f" : "#342041";
+  $$('[data-theme-choice]').forEach(button => {
+    const active = button.dataset.themeChoice === appearanceTheme;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
 }
 
 function memberName(userId) {
@@ -633,9 +648,14 @@ async function loadCloudState({ migrate = false } = {}) {
   if (!session) return;
   try {
     const userId = session.user.id;
-    const profileResult = await cloud.from("profiles").select("id, display_name").eq("id", userId).single();
+    const profileResult = await cloud.from("profiles").select("id, display_name, appearance_theme").eq("id", userId).single();
     if (profileResult.error) throw profileResult.error;
-    profile = { id: profileResult.data.id, displayName: profileResult.data.display_name };
+    profile = {
+      id: profileResult.data.id,
+      displayName: profileResult.data.display_name,
+      appearanceTheme: profileResult.data.appearance_theme || "sunset"
+    };
+    applyTheme(profile.appearanceTheme);
     const ownRequestsResult = await cloud.from("group_join_requests")
       .select("group_id", { count: "exact", head: true })
       .eq("user_id", userId)
@@ -1200,6 +1220,22 @@ $("#deleteAccountButton").addEventListener("click", async () => {
   showToast("Konto und Daten wurden gelöscht");
 });
 
+$$('[data-theme-choice]').forEach(button => button.addEventListener("click", async () => {
+  const previousTheme = appearanceTheme;
+  const nextTheme = button.dataset.themeChoice;
+  if (nextTheme === previousTheme) return;
+  applyTheme(nextTheme);
+  const { error } = await cloud.from("profiles")
+    .update({ appearance_theme: nextTheme })
+    .eq("id", session.user.id);
+  if (error) {
+    applyTheme(previousTheme);
+    return showToast(readableError(error));
+  }
+  if (profile) profile.appearanceTheme = nextTheme;
+  showToast(nextTheme === "noir" ? "Wayne Noir wurde gespeichert" : "Sonnenuntergang wurde gespeichert");
+}));
+
 window.addEventListener("beforeinstallprompt", event => {
   event.preventDefault();
   installPrompt = event;
@@ -1256,5 +1292,6 @@ $("#copyInviteButton").addEventListener("click", async () => {
 });
 
 const requestedView = location.hash.slice(1) || "gruppe";
+applyTheme(appearanceTheme);
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(console.error));
 initializeCloud();

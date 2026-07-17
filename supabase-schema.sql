@@ -6,6 +6,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null check (char_length(display_name) between 1 and 30),
+  appearance_theme text not null default 'sunset' check (appearance_theme in ('sunset', 'noir')),
   created_at timestamptz not null default now()
 );
 
@@ -73,6 +74,11 @@ create index if not exists group_join_requests_group_idx on public.group_join_re
 create index if not exists group_audit_log_group_idx on public.group_audit_log(group_id, created_at desc);
 
 -- Erlaubt ein erneutes Ausführen dieses Schemas bei bereits angelegten Projekten.
+alter table public.profiles add column if not exists appearance_theme text not null default 'sunset';
+alter table public.profiles drop constraint if exists profiles_appearance_theme_check;
+alter table public.profiles
+  add constraint profiles_appearance_theme_check check (appearance_theme in ('sunset', 'noir'));
+
 alter table public.groups drop constraint if exists groups_max_members_check;
 alter table public.groups alter column max_members set default 10;
 alter table public.groups add column if not exists invite_enabled boolean not null default true;

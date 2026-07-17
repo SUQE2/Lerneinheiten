@@ -1,5 +1,5 @@
-const CACHE = "lernzeit-shell-v3";
-const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./config.js", "./manifest.webmanifest", "./icon.svg", "./icon-192.png", "./icon-512.png", "./wallpaper.png"];
+const CACHE = "lernzeit-shell-v5";
+const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./config.js", "./manifest.webmanifest", "./icon.svg", "./icon-192.png", "./icon-512.png", "./wallpaper.png", "./wallpaper-noir.webp"];
 const SUPABASE_LIBRARY = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
 
 self.addEventListener("install", event => {
