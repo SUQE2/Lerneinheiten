@@ -302,6 +302,9 @@ legend { margin-bottom: 8px; }
 .view-intro h2 { font-size: clamp(25px,3vw,36px); }
 .view-intro p:last-child { margin: 9px 0 0; color: rgba(255,255,255,.74); font-size: 12px; line-height: 1.55; }
 .identity-mark { min-width: 82px; position: relative; z-index: 1; color: rgba(255,255,255,.86); font-family: Georgia, serif; font-size: clamp(46px,6vw,78px); line-height: 1; text-align: center; }
+.streak-mark { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.streak-mark strong { font: inherit; }
+.streak-mark small { font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; white-space: nowrap; }
 .week-intro { background: linear-gradient(125deg, rgba(220,77,91,.95), rgba(111,54,118,.93)); }
 .month-intro { background: linear-gradient(125deg, rgba(75,60,132,.96), rgba(117,66,133,.92)); }
 .year-intro { background: linear-gradient(125deg, rgba(224,92,69,.96), rgba(139,64,105,.94) 58%, rgba(80,48,112,.94)); }
@@ -425,6 +428,8 @@ body[data-theme="noir"] .brand-mark .brand-check { stroke: #c9cdd0; }
   .view-intro { min-height: 130px; padding: 23px; border-radius: 18px; }
   .view-intro h2 { font-size: 25px; }
   .identity-mark { display: none; }
+  .week-intro .streak-mark { min-width: 60px; display: flex; font-size: 42px; }
+  .week-intro .streak-mark small { max-width: 55px; font-size: 8px; white-space: normal; }
   .month-stats, .year-stats { grid-template-columns: 1fr 1fr !important; }
   #view-jahr .category-panel .category-list { grid-template-columns: 1fr 1fr; }
   #view-jahr .year-chart { height: 260px; }

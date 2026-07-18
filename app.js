@@ -36,6 +36,7 @@ let adminSettings = null;
 let ownPendingRequests = 0;
 let weeklyGoalMinutes = 600;
 let editingEntryId = null;
+let editingEntryIds = [];
 let editingEntryOwnerId = null;
 let installPrompt = null;
 let appearanceTheme = localStorage.getItem(THEME_KEY) || "sunset";
@@ -100,6 +101,30 @@ function compactDuration(minutes) {
 
 function sum(items) {
   return items.reduce((total, item) => total + item.minutes, 0);
+}
+
+function consolidateOwnEntries(items) {
+  const batches = new Map();
+  items.forEach(entry => {
+    const key = `${entry.ownerId || "local"}:${entry.createdAt}`;
+    const existing = batches.get(key);
+    if (!existing) {
+      batches.set(key, {
+        ...entry,
+        groupIds: entry.groupId ? [entry.groupId] : [],
+        linkedEntryIds: [entry.id]
+      });
+      return;
+    }
+    if (entry.groupId && !existing.groupIds.includes(entry.groupId)) existing.groupIds.push(entry.groupId);
+    existing.linkedEntryIds.push(entry.id);
+  });
+  return [...batches.values()];
+}
+
+function entryGroupNames(entry) {
+  const groupIds = entry.groupIds || (entry.groupId ? [entry.groupId] : []);
+  return groupIds.map(groupId => groups.find(item => item.id === groupId)?.name || "Unbekannte Gruppe");
 }
 
 function entriesBetween(start, end, source = entries) {
@@ -175,8 +200,9 @@ function entryRows(items, emptyText, options = {}) {
       const visibility = options.showVisibility
         ? `<span class="entry-visibility ${entry.visibility}">${visibilityLabels[entry.visibility] || "Privat"}</span> · `
         : "";
+      const groupNames = entryGroupNames(entry);
       const groupLabel = options.showGroup
-        ? `${escapeHtml(groups.find(item => item.id === entry.groupId)?.name || "Ohne Gruppe")} · `
+        ? `${escapeHtml(groupNames.length ? groupNames.join(", ") : "Ohne Gruppe")} · `
         : "";
       const owner = options.showOwner ? `<span class="entry-owner">${escapeHtml(memberName(entry.ownerId))}</span> · ${groupLabel}${visibility}` : `${groupLabel}${visibility}`;
       const ownsEntry = !session || entry.ownerId === session.user.id;
@@ -242,6 +268,7 @@ function renderWeek() {
   const total = sum(weekEntries);
   const activeDates = new Set(weekEntries.map(entry => entry.date));
   const previousTotal = sum(entriesBetween(addDays(weekCursor, -7), addDays(weekCursor, -1)));
+  renderWeekMotivation();
 
   $("#weekLabel").textContent = `KW ${getWeekNumber(weekCursor)}`;
   $("#weekDateRange").textContent = `${weekCursor.getDate()}. ${shortMonths[weekCursor.getMonth()]} – ${end.getDate()}. ${shortMonths[end.getMonth()]} ${end.getFullYear()}`;
@@ -287,6 +314,29 @@ function renderWeek() {
   renderCategoryList($("#weekCategories"), weekEntries);
   $("#weekEntries").innerHTML = entryRows(weekEntries.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4), "Für diese Woche gibt es noch keine Einträge.");
   renderComparison($("#weekComparison"), weekCursor, end);
+}
+
+function renderWeekMotivation() {
+  const streak = currentStreak();
+  const messages = [
+    ["Kleine Schritte werden zu großen Veränderungen.", "Du musst heute nicht alles schaffen – nur anfangen."],
+    ["Konstanz schlägt den perfekten Plan.", "Ein konzentrierter Schritt bringt dich deinem Ziel näher."],
+    ["Dein zukünftiges Ich wird dir danken.", "Was du heute lernst, macht morgen ein Stück leichter."],
+    ["Fortschritt beginnt mit dem nächsten Schritt.", "Auch eine kurze Lerneinheit hält deinen Rhythmus lebendig."],
+    ["Nicht alles auf einmal. Nur das Nächste.", "Richte den Blick auf die Aufgabe, die jetzt vor dir liegt."],
+    ["Dranbleiben ist eine Entscheidung für dich.", "Jeder Lerntag ist ein Beweis, dass du vorankommst."],
+    ["Aus Wiederholung wird Stärke.", "Deine Serie wächst nicht durch Perfektion, sondern durchs Weitermachen."]
+  ];
+  const dayNumber = Number(localISO(new Date()).replaceAll("-", ""));
+  const [title, text] = messages[(dayNumber + streak) % messages.length];
+  $("#weekMotivationEyebrow").textContent = streak
+    ? `${streak} ${streak === 1 ? "Tag" : "Tage"} · dein Rhythmus`
+    : "Dein nächster Schritt";
+  $("#weekMotivationTitle").textContent = title;
+  $("#weekMotivationText").textContent = streak
+    ? text
+    : "Trage heute deine erste Lerneinheit ein und starte deinen Rhythmus.";
+  $("#weekStreak").textContent = streak;
 }
 
 function renderMonth() {
@@ -546,16 +596,19 @@ function selectedEntryGroupIds() {
 }
 
 function renderEntryGroupPicker(entry, editingOwnEntry) {
-  const selectedGroupId = entry?.groupId || group?.id || "";
+  const selectedGroupIds = new Set(entry?.groupIds || (entry?.groupId ? [entry.groupId] : group?.id ? [group.id] : []));
+  const groupSelectionLocked = Boolean(entry?.linkedEntryIds?.length > 1);
   $("#entryGroupPicker").innerHTML = groups.length
     ? groups.map(item => `<label>
-        <input type="checkbox" name="entryGroup" value="${item.id}" ${item.id === selectedGroupId ? "checked" : ""} ${entry && !editingOwnEntry ? "disabled" : ""}>
+        <input type="checkbox" name="entryGroup" value="${item.id}" ${selectedGroupIds.has(item.id) ? "checked" : ""} ${entry && (!editingOwnEntry || groupSelectionLocked) ? "disabled" : ""}>
         <span><span class="group-picker-name">${escapeHtml(item.name)}</span></span>
       </label>`).join("")
     : '<div class="group-picker-empty">Du bist noch in keiner Gruppe. Der Eintrag bleibt privat.</div>';
-  $("#entryGroupHint").textContent = entry
-    ? "Beim Bearbeiten kann der Eintrag genau einer Gruppe zugeordnet werden."
-    : "Du kannst mehrere Gruppen gleichzeitig auswählen.";
+  $("#entryGroupHint").textContent = groupSelectionLocked
+    ? "Dieser gemeinsame Eintrag bleibt den ausgewählten Gruppen zugeordnet."
+    : entry
+      ? "Beim Bearbeiten kann der Eintrag genau einer Gruppe zugeordnet werden."
+      : "Du kannst mehrere Gruppen gleichzeitig auswählen.";
 }
 
 function openDialog(entry = null) {
@@ -564,6 +617,7 @@ function openDialog(entry = null) {
     return;
   }
   editingEntryId = entry?.id || null;
+  editingEntryIds = entry?.linkedEntryIds || (entry?.id ? [entry.id] : []);
   editingEntryOwnerId = entry?.ownerId || session.user.id;
   const editingOwnEntry = editingEntryOwnerId === session.user.id;
   $("#entryDialogEyebrow").textContent = entry ? "Lerneinheit ändern" : "Neue Lerneinheit";
@@ -777,7 +831,7 @@ async function loadCloudState({ migrate = false } = {}) {
     $("#goalHours").value = Math.floor(weeklyGoalMinutes / 60);
     $("#goalMinutes").value = weeklyGoalMinutes % 60;
     sharedEntries = entriesResult.data.map(mapCloudEntry);
-    entries = sharedEntries.filter(entry => entry.ownerId === userId);
+    entries = consolidateOwnEntries(sharedEntries.filter(entry => entry.ownerId === userId));
     renderAll();
     setupRealtime();
   } catch (error) {
@@ -879,7 +933,7 @@ $("#entryGroupPicker").addEventListener("change", event => {
   }
   syncVisibilityAvailability();
 });
-$("#closeDialog").addEventListener("click", () => { editingEntryId = null; editingEntryOwnerId = null; $("#entryDialog").close(); });
+$("#closeDialog").addEventListener("click", () => { editingEntryId = null; editingEntryIds = []; editingEntryOwnerId = null; $("#entryDialog").close(); });
 $("#entryDialog").addEventListener("click", event => {
   if (event.target === $("#entryDialog")) $("#entryDialog").close();
 });
@@ -925,7 +979,8 @@ $("#entryForm").addEventListener("submit", async event => {
   };
   let result;
   if (editingEntryId) {
-    result = await cloud.from("entries").update({ ...payload, group_id: selectedGroupId }).eq("id", editingEntryId);
+    const updatePayload = editingEntryIds.length > 1 ? payload : { ...payload, group_id: selectedGroupId };
+    result = await cloud.from("entries").update(updatePayload).in("id", editingEntryIds);
   } else {
     const targetGroupIds = selectedGroupIds.length ? selectedGroupIds : [null];
     const createdAt = new Date(entry.createdAt).toISOString();
@@ -951,6 +1006,7 @@ $("#entryForm").addEventListener("submit", async event => {
   $("#entryTopic").value = "";
   const wasEditing = Boolean(editingEntryId);
   editingEntryId = null;
+  editingEntryIds = [];
   editingEntryOwnerId = null;
   const saveMessage = selectedGroupIds.length > 1
     ? entry.visibility === "group"
@@ -980,7 +1036,8 @@ document.addEventListener("click", async event => {
 
   const editButton = event.target.closest("[data-edit]");
   if (editButton) {
-    const entry = sharedEntries.find(item => item.id === editButton.dataset.edit);
+    const entry = entries.find(item => item.id === editButton.dataset.edit || item.linkedEntryIds?.includes(editButton.dataset.edit))
+      || sharedEntries.find(item => item.id === editButton.dataset.edit);
     if (entry) openDialog(entry);
     return;
   }
@@ -1000,9 +1057,16 @@ document.addEventListener("click", async event => {
 
   const deleteButton = event.target.closest("[data-delete]");
   if (deleteButton) {
-    if (!confirm("Diesen Eintrag wirklich löschen?")) return;
+    const ownEntry = entries.find(item => item.id === deleteButton.dataset.delete || item.linkedEntryIds?.includes(deleteButton.dataset.delete));
+    const entryIds = ownEntry?.linkedEntryIds || [deleteButton.dataset.delete];
+    const confirmation = entryIds.length > 1
+      ? "Diesen Eintrag wirklich aus allen ausgewählten Gruppen löschen?"
+      : "Diesen Eintrag wirklich löschen?";
+    if (!confirm(confirmation)) return;
     if (session) {
-      const { error } = await cloud.rpc("delete_entry", { target_entry_id: deleteButton.dataset.delete });
+      const { error } = entryIds.length > 1
+        ? await cloud.from("entries").delete().in("id", entryIds)
+        : await cloud.rpc("delete_entry", { target_entry_id: deleteButton.dataset.delete });
       if (error) return showToast(readableError(error));
       await loadCloudState();
     } else {
@@ -1074,7 +1138,7 @@ function exportEntriesCsv() {
     categories[entry.category]?.label || entry.category,
     entry.minutes,
     entry.topic,
-    groups.find(item => item.id === entry.groupId)?.name || "Keine",
+    entryGroupNames(entry).join(", ") || "Keine",
     { group: "Gruppe", admins: "Admins", private: "Nur ich" }[entry.visibility]
   ])];
   const csv = `\ufeff${rows.map(row => row.map(safeCell).join(";")).join("\n")}`;
