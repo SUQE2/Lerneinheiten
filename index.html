@@ -69,7 +69,7 @@
 
           <article class="view-intro week-intro">
             <div><p class="eyebrow" id="weekMotivationEyebrow">Dein nächster Schritt</p><h2 id="weekMotivationTitle">Heute zählt mehr als perfekt.</h2><p id="weekMotivationText">Behalte dein Wochenziel im Blick und finde den nächsten kleinen Schritt.</p></div>
-            <span class="identity-mark streak-mark"><strong id="weekStreak">0</strong><small>Tage in Folge</small></span>
+            <span class="identity-mark streak-mark"><strong id="weekStreak">0</strong><small>Tage in Folge</small><small class="streak-best" id="weekBestStreak">Rekord: 0</small></span>
           </article>
 
           <div class="stat-grid week-stats">
@@ -94,6 +94,11 @@
               <span class="stat-detail" id="topCategoryDetail">Noch offen</span>
             </article>
           </div>
+
+          <article class="panel weekly-review-panel">
+            <div class="panel-heading"><div><p class="eyebrow">Dein Wochenrückblick</p><h2>Was diese Woche besonders war</h2></div></div>
+            <div class="weekly-review-grid" id="weeklyReview"></div>
+          </article>
 
           <article class="panel goal-panel">
             <div>
@@ -283,6 +288,21 @@
                 </label>
               </div>
             </article>
+            <article class="panel group-goal-panel">
+              <div>
+                <p class="eyebrow">Gemeinsame Challenge</p>
+                <h2 id="groupGoalTitle">Noch kein Wochenziel</h2>
+                <div class="goal-track"><span id="groupGoalProgressBar"></span></div>
+                <p class="muted" id="groupGoalProgressText">Ein Admin kann ein gemeinsames Ziel festlegen.</p>
+              </div>
+              <form id="groupGoalForm" class="inline-form admin-only">
+                <label>Ziel der Gruppe
+                  <span><input id="groupGoalHours" type="number" min="0" max="1680" value="20" inputmode="numeric"> Std.
+                  <input id="groupGoalMinutes" type="number" min="0" max="59" value="0" inputmode="numeric"> Min.</span>
+                </label>
+                <button class="primary-button secondary" type="submit">Challenge speichern</button>
+              </form>
+            </article>
             <article class="panel">
               <div class="panel-heading"><div><p class="eyebrow">Mitglieder</p><h2>Euer Kreis</h2></div><span class="muted">Aktuelle Woche</span></div>
               <div id="groupMembers" class="member-grid"></div>
@@ -422,9 +442,10 @@
     </div>
   </dialog>
 
-  <div class="toast" id="toast" role="status">Eintrag gespeichert</div>
+  <div class="toast" id="toast" role="status"><span id="toastMessage">Eintrag gespeichert</span><button class="toast-action hidden" id="toastAction" type="button">Rückgängig</button></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="logic.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

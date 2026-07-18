@@ -1,5 +1,6 @@
 const STORAGE_KEY = "lernzeit.entries.v1";
 const THEME_KEY = "lernzeit.appearance-theme";
+const OFFLINE_QUEUE_PREFIX = "lernzeit.offline-queue";
 const categories = {
   studium: { label: "Studium", color: "var(--primary)" },
   arbeit: { label: "Arbeit", color: "var(--orange)" },
@@ -33,6 +34,7 @@ let members = [];
 let joinRequests = [];
 let auditLogs = [];
 let adminSettings = null;
+let groupWeeklyGoalMinutes = null;
 let ownPendingRequests = 0;
 let weeklyGoalMinutes = 600;
 let editingEntryId = null;
@@ -43,6 +45,8 @@ let appearanceTheme = localStorage.getItem(THEME_KEY) || "sunset";
 let showGroupSetup = false;
 let realtimeChannel = null;
 let refreshTimer = null;
+let toastTimer = null;
+let toastActionHandler = null;
 let authMode = "login";
 let weekCursor = startOfWeek(new Date());
 let monthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -104,27 +108,34 @@ function sum(items) {
 }
 
 function consolidateOwnEntries(items) {
-  const batches = new Map();
-  items.forEach(entry => {
-    const key = `${entry.ownerId || "local"}:${entry.createdAt}`;
-    const existing = batches.get(key);
-    if (!existing) {
-      batches.set(key, {
-        ...entry,
-        groupIds: entry.groupId ? [entry.groupId] : [],
-        linkedEntryIds: [entry.id]
-      });
-      return;
-    }
-    if (entry.groupId && !existing.groupIds.includes(entry.groupId)) existing.groupIds.push(entry.groupId);
-    existing.linkedEntryIds.push(entry.id);
-  });
-  return [...batches.values()];
+  return window.LernzeitLogic.consolidateEntries(items);
 }
 
 function entryGroupNames(entry) {
   const groupIds = entry.groupIds || (entry.groupId ? [entry.groupId] : []);
   return groupIds.map(groupId => groups.find(item => item.id === groupId)?.name || "Unbekannte Gruppe");
+}
+
+function entryBelongsToGroup(entry, groupId) {
+  return (entry.groupIds || (entry.groupId ? [entry.groupId] : [])).includes(groupId);
+}
+
+function offlineQueueKey() {
+  return `${OFFLINE_QUEUE_PREFIX}.${session?.user.id || "guest"}`;
+}
+
+function getOfflineQueue() {
+  try {
+    const queue = JSON.parse(localStorage.getItem(offlineQueueKey()));
+    return Array.isArray(queue) ? queue : [];
+  } catch {
+    return [];
+  }
+}
+
+function setOfflineQueue(queue) {
+  if (queue.length) localStorage.setItem(offlineQueueKey(), JSON.stringify(queue));
+  else localStorage.removeItem(offlineQueueKey());
 }
 
 function entriesBetween(start, end, source = entries) {
@@ -238,7 +249,7 @@ function renderComparison(element, start, end) {
   }
 
   const publicEntries = entriesBetween(start, end, sharedEntries).filter(entry =>
-    entry.groupId === group.id && entry.visibility === "group"
+    entryBelongsToGroup(entry, group.id) && entry.visibility === "group"
   );
   const rows = members.map(member => {
     const items = publicEntries.filter(entry => entry.ownerId === member.id);
@@ -301,6 +312,18 @@ function renderWeek() {
     return { date, items, total: sum(items) };
   });
   const maximum = Math.max(...daily.map(day => day.total), 60);
+  const strongestDay = [...daily].sort((a, b) => b.total - a.total)[0];
+  const comparisonText = !total
+    ? "Noch offen"
+    : !previousTotal
+      ? "Erster Vergleich"
+      : `${Math.round((total - previousTotal) / previousTotal * 100) >= 0 ? "+" : ""}${Math.round((total - previousTotal) / previousTotal * 100)} %`;
+  $("#weeklyReview").innerHTML = [
+    ["Lerneinheiten", String(weekEntries.length)],
+    ["Stärkster Tag", strongestDay?.total ? `${dayNames[(strongestDay.date.getDay() + 6) % 7]} · ${compactDuration(strongestDay.total)}` : "Noch offen"],
+    ["Top-Bereich", byCategory[0][1] ? categories[byCategory[0][0]].label : "Noch offen"],
+    ["Zur Vorwoche", comparisonText]
+  ].map(([label, value]) => `<div class="review-item"><span>${label}</span><strong>${value}</strong></div>`).join("");
   $("#weekChart").innerHTML = daily.map((day, index) => {
     const height = day.total ? Math.max(7, day.total / maximum * 88) : 2;
     const segments = Object.keys(categories).map(key => {
@@ -337,6 +360,7 @@ function renderWeekMotivation() {
     ? text
     : "Trage heute deine erste Lerneinheit ein und starte deinen Rhythmus.";
   $("#weekStreak").textContent = streak;
+  $("#weekBestStreak").textContent = `Rekord: ${bestStreak()}`;
 }
 
 function renderMonth() {
@@ -402,15 +426,11 @@ function renderAllEntries() {
 }
 
 function currentStreak() {
-  const dates = new Set(entries.map(entry => entry.date));
-  let cursor = new Date();
-  if (!dates.has(localISO(cursor))) cursor = addDays(cursor, -1);
-  let count = 0;
-  while (dates.has(localISO(cursor))) {
-    count++;
-    cursor = addDays(cursor, -1);
-  }
-  return count;
+  return window.LernzeitLogic.calculateStreaks(entries, localISO(new Date())).current;
+}
+
+function bestStreak() {
+  return window.LernzeitLogic.calculateStreaks(entries, localISO(new Date())).best;
 }
 
 function formatDateTime(value) {
@@ -433,6 +453,7 @@ function auditDescription(item) {
     invite_settings_changed: "hat die Einladungseinstellungen geändert",
     invite_code_rotated: "hat einen neuen Einladungscode erzeugt",
     capacity_changed: `hat die Platzanzahl auf ${Number(item.details?.maxMembers) || "–"} geändert`,
+    group_goal_changed: `hat das Wochenziel auf ${compactDuration(Number(item.details?.weeklyMinutes) || 0)} gesetzt`,
     entry_deleted_by_admin: "hat einen Gruppeneintrag gelöscht"
   };
   return labels[item.action] || "hat eine Änderung vorgenommen";
@@ -491,8 +512,25 @@ function renderGroup() {
   const start = startOfWeek(new Date());
   const end = addDays(start, 6);
   const publicWeekEntries = entriesBetween(start, end, sharedEntries).filter(entry =>
-    entry.groupId === group.id && entry.visibility === "group"
+    entryBelongsToGroup(entry, group.id) && entry.visibility === "group"
   );
+  const groupWeekTotal = sum(publicWeekEntries);
+  if (groupWeeklyGoalMinutes) {
+    const groupGoalPercent = Math.min(100, Math.round(groupWeekTotal / groupWeeklyGoalMinutes * 100));
+    $("#groupGoalTitle").textContent = `${compactDuration(groupWeekTotal)} von ${compactDuration(groupWeeklyGoalMinutes)}`;
+    $("#groupGoalProgressBar").style.width = `${groupGoalPercent}%`;
+    $("#groupGoalProgressText").textContent = groupWeekTotal >= groupWeeklyGoalMinutes
+      ? `Challenge geschafft – ${formatDuration(groupWeekTotal - groupWeeklyGoalMinutes)} über dem Ziel.`
+      : `Noch ${formatDuration(groupWeeklyGoalMinutes - groupWeekTotal)} bis zu eurem Wochenziel.`;
+    $("#groupGoalHours").value = Math.floor(groupWeeklyGoalMinutes / 60);
+    $("#groupGoalMinutes").value = groupWeeklyGoalMinutes % 60;
+  } else {
+    $("#groupGoalTitle").textContent = "Noch kein Wochenziel";
+    $("#groupGoalProgressBar").style.width = "0%";
+    $("#groupGoalProgressText").textContent = administrator
+      ? "Lege eine gemeinsame Challenge für diese Woche fest."
+      : "Ein Admin kann ein gemeinsames Ziel festlegen.";
+  }
   $("#groupMembers").innerHTML = members.map(member => {
     const total = sum(publicWeekEntries.filter(entry => entry.ownerId === member.id));
     const canSetRole = ownMember?.role === "owner" && member.role !== "owner";
@@ -516,7 +554,7 @@ function renderGroup() {
     </div>`;
   }).join("");
 
-  const groupEntries = sharedEntries.filter(entry => entry.groupId === group.id && entry.visibility !== "private");
+  const groupEntries = sharedEntries.filter(entry => entryBelongsToGroup(entry, group.id) && entry.visibility !== "private");
   const visibleActivity = (administrator
     ? groupEntries
     : groupEntries.filter(entry => entry.visibility === "group"))
@@ -544,7 +582,14 @@ function renderAccount() {
   const label = session ? (profile?.displayName || session.user.email) : (cloudEnabled ? "Anmelden" : "Online einrichten");
   $("#accountLabel").textContent = label;
   $("#accountButton").classList.toggle("online", Boolean(session));
-  $("#storageNote").textContent = session ? "Deine Daten werden sicher synchronisiert." : "Anmeldung erforderlich.";
+  const pendingSync = session ? getOfflineQueue().length : 0;
+  $("#storageNote").textContent = !session
+    ? "Anmeldung erforderlich."
+    : pendingSync
+      ? `${pendingSync} ${pendingSync === 1 ? "Eintrag wartet" : "Einträge warten"} auf Synchronisierung.`
+      : navigator.onLine
+        ? "Deine Daten werden sicher synchronisiert."
+        : "Offline – neue Einträge werden vorgemerkt.";
   $$(".auth-required").forEach(element => element.classList.toggle("hidden", !session));
   $("#openEntryButton").classList.toggle("hidden", !session);
   $("#groupLoginButton").textContent = cloudEnabled ? "Anmelden oder registrieren" : "Online-Modus einrichten";
@@ -607,7 +652,7 @@ function renderEntryGroupPicker(entry, editingOwnEntry) {
   $("#entryGroupHint").textContent = groupSelectionLocked
     ? "Dieser gemeinsame Eintrag bleibt den ausgewählten Gruppen zugeordnet."
     : entry
-      ? "Beim Bearbeiten kann der Eintrag genau einer Gruppe zugeordnet werden."
+      ? "Du kannst die Gruppenzuordnungen dieses Eintrags ändern."
       : "Du kannst mehrere Gruppen gleichzeitig auswählen.";
 }
 
@@ -637,12 +682,26 @@ function openDialog(entry = null) {
   $("#entryDialog").showModal();
 }
 
-function showToast(message) {
+function showToast(message, action = null) {
   const toast = $("#toast");
-  toast.textContent = message;
+  clearTimeout(toastTimer);
+  toastActionHandler = action?.handler || null;
+  $("#toastMessage").textContent = message;
+  $("#toastAction").textContent = action?.label || "Rückgängig";
+  $("#toastAction").classList.toggle("hidden", !action);
   toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 2600);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove("show");
+    toastActionHandler = null;
+  }, action ? 6000 : 2600);
 }
+
+$("#toastAction").addEventListener("click", async () => {
+  const handler = toastActionHandler;
+  toastActionHandler = null;
+  $("#toastAction").classList.add("hidden");
+  if (handler) await handler();
+});
 
 function readableError(error) {
   const message = error?.message || "Etwas ist schiefgelaufen.";
@@ -676,10 +735,13 @@ function updateAuthMode() {
 }
 
 function mapCloudEntry(row) {
+  const hasGroupAssociations = Array.isArray(row.entry_groups);
+  const groupIds = hasGroupAssociations ? row.entry_groups.map(item => item.group_id) : [];
   return {
     id: row.id,
     ownerId: row.user_id,
     groupId: row.group_id,
+    ...(hasGroupAssociations ? { groupIds } : {}),
     date: row.entry_date,
     category: row.category,
     minutes: row.minutes,
@@ -697,7 +759,7 @@ async function migrateLocalEntries() {
   const rows = localEntries.map(entry => ({
     id: crypto.randomUUID(),
     user_id: session.user.id,
-    group_id: group?.id || null,
+    group_id: null,
     entry_date: entry.date,
     category: entry.category,
     minutes: entry.minutes,
@@ -709,6 +771,141 @@ async function migrateLocalEntries() {
   if (error) throw error;
   localStorage.setItem(marker, "true");
   showToast(`${rows.length} lokale ${rows.length === 1 ? "Eintrag wurde" : "Einträge wurden"} privat übernommen`);
+}
+
+async function fetchCloudEntries() {
+  let result = await cloud.from("entries")
+    .select("id, user_id, group_id, entry_date, category, minutes, topic, visibility, created_at, updated_at, deleted_at, entry_groups(group_id)")
+    .is("deleted_at", null)
+    .order("entry_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (result.error && /entry_groups|deleted_at/i.test(result.error.message || "")) {
+    result = await cloud.from("entries")
+      .select("id, user_id, group_id, entry_date, category, minutes, topic, visibility, created_at, updated_at")
+      .order("entry_date", { ascending: false })
+      .order("created_at", { ascending: false });
+  }
+  return result;
+}
+
+function commandToEntry(command) {
+  return {
+    id: command.id,
+    ownerId: session.user.id,
+    groupId: command.groupIds[0] || null,
+    groupIds: command.groupIds,
+    linkedEntryIds: [command.id],
+    date: command.date,
+    category: command.category,
+    minutes: command.minutes,
+    topic: command.topic,
+    visibility: command.groupIds.length ? command.visibility : "private",
+    createdAt: command.createdAt,
+    updatedAt: Date.now(),
+    pendingSync: true
+  };
+}
+
+function overlayOfflineQueue() {
+  if (!session) return;
+  const queuedEntries = getOfflineQueue().map(commandToEntry);
+  const queuedIds = new Set(queuedEntries.map(entry => entry.id));
+  sharedEntries = [...sharedEntries.filter(entry => !queuedIds.has(entry.id)), ...queuedEntries];
+  entries = consolidateOwnEntries(sharedEntries.filter(entry => entry.ownerId === session.user.id));
+}
+
+function isMissingMultiGroupRpc(error) {
+  return /save_learning_entry|schema cache|could not find the function/i.test(error?.message || "");
+}
+
+function isConnectionError(error) {
+  return !navigator.onLine || /failed to fetch|network|load failed/i.test(error?.message || "");
+}
+
+async function persistLearningCommand(command) {
+  if (command.managed) {
+    return cloud.from("entries").update({
+      entry_date: command.date,
+      category: command.category,
+      minutes: command.minutes,
+      topic: command.topic,
+      visibility: command.visibility,
+      updated_at: new Date().toISOString()
+    }).eq("id", command.id);
+  }
+  let result = await cloud.rpc("save_learning_entry", {
+    target_entry_id: command.id,
+    target_entry_date: command.date,
+    target_category: command.category,
+    target_minutes: command.minutes,
+    target_topic: command.topic,
+    target_visibility: command.visibility,
+    target_group_ids: command.groupIds
+  });
+  if (!result.error || !isMissingMultiGroupRpc(result.error)) return result;
+
+  const payload = {
+    entry_date: command.date,
+    category: command.category,
+    minutes: command.minutes,
+    topic: command.topic,
+    visibility: command.groupIds.length ? command.visibility : "private",
+    updated_at: new Date().toISOString()
+  };
+  if (command.existingIds?.length) {
+    const legacyPayload = command.existingIds.length > 1
+      ? payload
+      : { ...payload, group_id: command.groupIds[0] || null };
+    return cloud.from("entries").update(legacyPayload).in("id", command.existingIds);
+  }
+  const targetGroupIds = command.groupIds.length ? command.groupIds : [null];
+  return cloud.from("entries").insert(targetGroupIds.map((groupId, index) => ({
+    ...payload,
+    id: index ? crypto.randomUUID() : command.id,
+    user_id: session.user.id,
+    group_id: groupId,
+    created_at: new Date(command.createdAt).toISOString()
+  })));
+}
+
+function queueLearningCommand(command) {
+  const queue = getOfflineQueue().filter(item => item.id !== command.id);
+  queue.push(command);
+  setOfflineQueue(queue);
+  overlayOfflineQueue();
+  renderAll();
+}
+
+async function flushOfflineQueue() {
+  if (!session || !navigator.onLine) return;
+  const queue = getOfflineQueue();
+  if (!queue.length) return;
+  const remaining = [];
+  for (const command of queue) {
+    const { error } = await persistLearningCommand(command);
+    if (error) {
+      remaining.push(command);
+      if (!isConnectionError(error)) console.error(error);
+    }
+  }
+  setOfflineQueue(remaining);
+  if (remaining.length === 0) {
+    await loadCloudState();
+    showToast(`${queue.length} offline gespeicherte ${queue.length === 1 ? "Lernzeit wurde" : "Lernzeiten wurden"} synchronisiert`);
+  }
+}
+
+function setEntryFormSaving(saving) {
+  const button = $("#entrySubmitButton");
+  button.disabled = saving;
+  button.setAttribute("aria-busy", String(saving));
+  if (saving) {
+    button.dataset.label = button.textContent;
+    button.textContent = "Wird gespeichert …";
+  } else if (button.dataset.label) {
+    button.textContent = button.dataset.label;
+    delete button.dataset.label;
+  }
 }
 
 async function loadCloudState({ migrate = false } = {}) {
@@ -741,6 +938,7 @@ async function loadCloudState({ migrate = false } = {}) {
     joinRequests = [];
     auditLogs = [];
     adminSettings = null;
+    groupWeeklyGoalMinutes = null;
 
     if (membershipResult.data.length) {
       const membershipByGroup = new Map(membershipResult.data.map(item => [item.group_id, item]));
@@ -768,7 +966,7 @@ async function loadCloudState({ migrate = false } = {}) {
       group = groups.find(item => item.id === storedGroupId) || groups[0];
       localStorage.setItem(activeGroupStorageKey(), group.id);
       const administrator = ["owner", "admin"].includes(group.role);
-      const [membershipsResult, settingsResult, requestsResult, auditResult] = await Promise.all([
+      const [membershipsResult, settingsResult, requestsResult, auditResult, groupGoalResult] = await Promise.all([
         cloud.from("group_members").select("user_id, role, joined_at").eq("group_id", group.id).order("joined_at"),
         administrator
           ? cloud.rpc("get_group_admin_settings", { target_group_id: group.id })
@@ -778,13 +976,16 @@ async function loadCloudState({ migrate = false } = {}) {
           : Promise.resolve({ data: [], error: null }),
         administrator
           ? cloud.from("group_audit_log").select("id, actor_id, action, target_user_id, details, created_at").eq("group_id", group.id).order("created_at", { ascending: false }).limit(50)
-          : Promise.resolve({ data: [], error: null })
+          : Promise.resolve({ data: [], error: null }),
+        cloud.from("group_weekly_goals").select("weekly_minutes").eq("group_id", group.id).maybeSingle()
       ]);
       if (membershipsResult.error) throw membershipsResult.error;
       if (settingsResult.error) throw settingsResult.error;
       if (requestsResult.error) throw requestsResult.error;
       if (auditResult.error) throw auditResult.error;
+      if (groupGoalResult.error && !/group_weekly_goals/i.test(groupGoalResult.error.message || "")) throw groupGoalResult.error;
       adminSettings = settingsResult.data;
+      groupWeeklyGoalMinutes = groupGoalResult.data?.weekly_minutes || null;
       group.inviteCode = adminSettings?.inviteCode || null;
       const ids = [...new Set([
         ...membershipsResult.data.map(item => item.user_id),
@@ -819,10 +1020,7 @@ async function loadCloudState({ migrate = false } = {}) {
     if (migrate) await migrateLocalEntries();
 
     const [entriesResult, goalResult] = await Promise.all([
-      cloud.from("entries")
-        .select("id, user_id, group_id, entry_date, category, minutes, topic, visibility, created_at, updated_at")
-        .order("entry_date", { ascending: false })
-        .order("created_at", { ascending: false }),
+      fetchCloudEntries(),
       cloud.from("learning_goals").select("weekly_minutes").eq("user_id", userId).maybeSingle()
     ]);
     if (entriesResult.error) throw entriesResult.error;
@@ -832,8 +1030,10 @@ async function loadCloudState({ migrate = false } = {}) {
     $("#goalMinutes").value = weeklyGoalMinutes % 60;
     sharedEntries = entriesResult.data.map(mapCloudEntry);
     entries = consolidateOwnEntries(sharedEntries.filter(entry => entry.ownerId === userId));
+    overlayOfflineQueue();
     renderAll();
     setupRealtime();
+    if (navigator.onLine) setTimeout(flushOfflineQueue, 0);
   } catch (error) {
     console.error(error);
     showToast(readableError(error));
@@ -867,6 +1067,10 @@ function setupRealtime() {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => loadCloudState(), 250);
     })
+    .on("postgres_changes", { event: "*", schema: "public", table: "group_weekly_goals" }, () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => loadCloudState(), 250);
+    })
     .subscribe();
 }
 
@@ -880,6 +1084,7 @@ async function handleSession(nextSession, migrate = false) {
     joinRequests = [];
     auditLogs = [];
     adminSettings = null;
+    groupWeeklyGoalMinutes = null;
     ownPendingRequests = 0;
     showGroupSetup = false;
     sharedEntries = [];
@@ -925,14 +1130,7 @@ $$('.nav-item').forEach(button => button.addEventListener('click', () => showVie
 $$('[data-go]').forEach(button => button.addEventListener('click', () => showView(button.dataset.go)));
 $(".brand").addEventListener("click", event => { event.preventDefault(); showView("woche"); });
 $("#openEntryButton").addEventListener("click", () => openDialog());
-$("#entryGroupPicker").addEventListener("change", event => {
-  if (editingEntryId && event.target.matches("input[name=entryGroup]") && event.target.checked) {
-    $$("input[name=entryGroup]").forEach(input => {
-      if (input !== event.target) input.checked = false;
-    });
-  }
-  syncVisibilityAvailability();
-});
+$("#entryGroupPicker").addEventListener("change", syncVisibilityAvailability);
 $("#closeDialog").addEventListener("click", () => { editingEntryId = null; editingEntryIds = []; editingEntryOwnerId = null; $("#entryDialog").close(); });
 $("#entryDialog").addEventListener("click", event => {
   if (event.target === $("#entryDialog")) $("#entryDialog").close();
@@ -958,64 +1156,64 @@ $("#entryForm").addEventListener("submit", async event => {
   }
 
   const selectedGroupIds = selectedEntryGroupIds();
-  const selectedGroupId = selectedGroupIds[0] || null;
-  const entry = {
+  const wasEditing = Boolean(editingEntryId);
+  const command = {
+    id: editingEntryId || crypto.randomUUID(),
+    existingIds: [...editingEntryIds],
+    managed: Boolean(editingEntryId && editingEntryOwnerId !== session.user.id),
     date: $("#entryDate").value,
     category: $("input[name=category]:checked").value,
     minutes: total,
     topic: $("#entryTopic").value.trim(),
-    groupId: selectedGroupId,
-    visibility: selectedGroupId ? $("input[name=visibility]:checked").value : "private",
+    groupIds: selectedGroupIds,
+    visibility: selectedGroupIds.length ? $("input[name=visibility]:checked").value : "private",
     createdAt: Date.now()
   };
-
-  const payload = {
-    entry_date: entry.date,
-    category: entry.category,
-    minutes: entry.minutes,
-    topic: entry.topic,
-    visibility: entry.visibility,
-    updated_at: new Date().toISOString()
-  };
-  let result;
-  if (editingEntryId) {
-    const updatePayload = editingEntryIds.length > 1 ? payload : { ...payload, group_id: selectedGroupId };
-    result = await cloud.from("entries").update(updatePayload).in("id", editingEntryIds);
-  } else {
-    const targetGroupIds = selectedGroupIds.length ? selectedGroupIds : [null];
-    const createdAt = new Date(entry.createdAt).toISOString();
-    const rows = targetGroupIds.map((groupId, index) => ({
-      ...payload,
-      id: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
-      user_id: session.user.id,
-      group_id: groupId,
-      created_at: createdAt
-    }));
-    result = await cloud.from("entries").insert(rows);
+  setEntryFormSaving(true);
+  let queuedOffline = false;
+  try {
+    if (!navigator.onLine) {
+      if (command.managed) {
+        $("#formError").textContent = "Fremde Gruppeneinträge können nur online bearbeitet werden.";
+        return;
+      }
+      queueLearningCommand(command);
+      queuedOffline = true;
+    } else {
+      const { error } = await persistLearningCommand(command);
+      if (error && isConnectionError(error)) {
+        if (command.managed) {
+          $("#formError").textContent = "Fremde Gruppeneinträge können nur online bearbeitet werden.";
+          return;
+        }
+        queueLearningCommand(command);
+        queuedOffline = true;
+      } else if (error) {
+        $("#formError").textContent = readableError(error);
+        return;
+      } else {
+        await loadCloudState();
+      }
+    }
+  } finally {
+    setEntryFormSaving(false);
   }
-  const { error } = result;
-  if (error) {
-    $("#formError").textContent = readableError(error);
-    return;
-  }
-  await loadCloudState();
 
   $("#entryDialog").close();
   $("#entryHours").value = 0;
   $("#entryMinutes").value = 30;
   $("#entryTopic").value = "";
-  const wasEditing = Boolean(editingEntryId);
   editingEntryId = null;
   editingEntryIds = [];
   editingEntryOwnerId = null;
   const saveMessage = selectedGroupIds.length > 1
-    ? entry.visibility === "group"
+    ? command.visibility === "group"
       ? `Lernzeit wurde mit ${selectedGroupIds.length} Gruppen geteilt`
       : `Lernzeit wurde für ${selectedGroupIds.length} Gruppen gespeichert`
-    : entry.visibility === "group"
+    : command.visibility === "group"
       ? "Lernzeit wurde mit der Gruppe geteilt"
       : "Lernzeit wurde gespeichert";
-  showToast(wasEditing ? "Eintrag wurde aktualisiert" : saveMessage);
+  showToast(queuedOffline ? "Offline gespeichert – wird später synchronisiert" : wasEditing ? "Eintrag wurde aktualisiert" : saveMessage);
 });
 
 document.addEventListener("click", async event => {
@@ -1058,15 +1256,12 @@ document.addEventListener("click", async event => {
   const deleteButton = event.target.closest("[data-delete]");
   if (deleteButton) {
     const ownEntry = entries.find(item => item.id === deleteButton.dataset.delete || item.linkedEntryIds?.includes(deleteButton.dataset.delete));
-    const entryIds = ownEntry?.linkedEntryIds || [deleteButton.dataset.delete];
-    const confirmation = entryIds.length > 1
-      ? "Diesen Eintrag wirklich aus allen ausgewählten Gruppen löschen?"
-      : "Diesen Eintrag wirklich löschen?";
-    if (!confirm(confirmation)) return;
+    const targetEntryId = ownEntry?.id || deleteButton.dataset.delete;
+    if (!ownEntry && !confirm("Diesen Gruppeneintrag wirklich löschen?")) return;
     if (session) {
-      const { error } = entryIds.length > 1
-        ? await cloud.from("entries").delete().in("id", entryIds)
-        : await cloud.rpc("delete_entry", { target_entry_id: deleteButton.dataset.delete });
+      const { error } = ownEntry
+        ? await cloud.rpc("delete_entry", { target_entry_id: targetEntryId })
+        : await cloud.rpc("remove_entry_from_group", { target_entry_id: targetEntryId, target_group_id: group.id });
       if (error) return showToast(readableError(error));
       await loadCloudState();
     } else {
@@ -1074,7 +1269,19 @@ document.addEventListener("click", async event => {
       saveEntries();
       renderAll();
     }
-    showToast("Eintrag gelöscht");
+    if (ownEntry && session) {
+      showToast("Eintrag gelöscht", {
+        label: "Rückgängig",
+        handler: async () => {
+          const { error } = await cloud.rpc("restore_own_entry", { target_entry_id: targetEntryId });
+          if (error) return showToast(readableError(error));
+          await loadCloudState();
+          showToast("Eintrag wiederhergestellt");
+        }
+      });
+    } else {
+      showToast("Gruppeneintrag gelöscht");
+    }
     return;
   }
 
@@ -1125,6 +1332,23 @@ $("#goalForm").addEventListener("submit", async event => {
   weeklyGoalMinutes = minutes;
   renderWeek();
   showToast("Wochenziel gespeichert");
+});
+
+$("#groupGoalForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const minutes = Number($("#groupGoalHours").value || 0) * 60 + Number($("#groupGoalMinutes").value || 0);
+  if (minutes < 30 || minutes > 100800) return showToast("Das Gruppenziel muss zwischen 30 Minuten und 1.680 Stunden liegen.");
+  const button = event.submitter;
+  button.disabled = true;
+  const { error } = await cloud.rpc("set_group_weekly_goal", {
+    target_group_id: group.id,
+    target_minutes: minutes
+  });
+  button.disabled = false;
+  if (error) return showToast(readableError(error));
+  groupWeeklyGoalMinutes = minutes;
+  await loadCloudState();
+  showToast("Gemeinsame Challenge gespeichert");
 });
 
 function exportEntriesCsv() {
@@ -1353,6 +1577,8 @@ window.addEventListener("appinstalled", () => {
   $("#installAppButton").classList.add("hidden");
   showToast("Lernzeit wurde als App installiert");
 });
+window.addEventListener("online", flushOfflineQueue);
+window.addEventListener("offline", renderAccount);
 
 $("#createGroupForm").addEventListener("submit", async event => {
   event.preventDefault();

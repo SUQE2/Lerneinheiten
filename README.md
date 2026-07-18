@@ -44,9 +44,13 @@ Für spätere Datenbankänderungen wird jeweils eine neue, zeitlich benannte SQL
 - Beitrittsanfragen, die erst ein Admin bestätigt
 - Einladungen deaktivieren, zeitlich begrenzen oder mit einem neuen Code versehen
 - synchronisierte Lernzeiten auf mehreren Geräten
-- Lernzeiten bearbeiten und beim Eintragen gleichzeitig mehreren Gruppen zuordnen
+- einen Lernzeiteintrag gleichzeitig mehreren Gruppen zuordnen, ohne die persönliche Zeit doppelt zu zählen
 - Sichtbarkeit pro Eintrag: **Ganze Gruppe**, **Nur Gruppenadmins** oder **Nur ich**
 - persönliches Wochenziel mit Fortschrittsanzeige
+- aktuelle und persönliche Bestserie sowie ein automatischer Wochenrückblick
+- gemeinsame wöchentliche Gruppenziele und Challenges
+- neue Lernzeiten offline vormerken und bei der nächsten Verbindung synchronisieren
+- gelöschte eigene Einträge kurzfristig wiederherstellen
 - Export aller eigenen Einträge als CSV oder druckbare PDF
 - Wochen-, Monats- und Jahresvergleich
 - gemeinsame Aktivitätsübersicht mit Thema und Kategorie
@@ -60,6 +64,7 @@ Für spätere Datenbankänderungen wird jeweils eine neue, zeitlich benannte SQL
 - als App installierbar; die Oberfläche öffnet sich auch offline, die Synchronisierung benötigt Internet
 - persönliche Hintergrundwahl zwischen **Sonnenuntergang** und **Wayne Noir**, im Konto geräteübergreifend gespeichert
 - automatische, private Übernahme vorhandener lokaler Einträge beim ersten Login
+- automatisierte Tests für Mehrfachzuordnungen und Serienberechnungen
 
 ## Datenschutz und Zugriffsregeln
 

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="de">
+<meta charset="utf-8">
+<title>Lernzeit Logiktests</title>
+<pre id="result">Tests laufen …</pre>
+<script src="../logic.js"></script>
+<script>
+  const failures = [];
+  const check = (condition, message) => { if (!condition) failures.push(message); };
+  const grouped = LernzeitLogic.consolidateEntries([
+    { id: "a", ownerId: "u", groupId: "g1", createdAt: 1 },
+    { id: "b", ownerId: "u", groupId: "g2", createdAt: 1 }
+  ]);
+  check(grouped.length === 1, "Mehrfachgruppen wurden nicht zusammengeführt");
+  check(grouped[0].groupIds.length === 2, "Gruppenzuordnungen fehlen");
+  const streaks = LernzeitLogic.calculateStreaks([
+    { date: "2026-07-15" }, { date: "2026-07-16" }, { date: "2026-07-18" }
+  ], "2026-07-18");
+  check(streaks.current === 1, "Aktuelle Serie ist falsch");
+  check(streaks.best === 2, "Bestserie ist falsch");
+  const result = document.querySelector("#result");
+  result.dataset.status = failures.length ? "failed" : "passed";
+  result.textContent = failures.length ? failures.join("\n") : "Alle Logiktests bestanden";
+</script>
+</html>
