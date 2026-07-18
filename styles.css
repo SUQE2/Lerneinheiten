@@ -158,6 +158,18 @@ legend { margin-bottom: 8px; }
 .category-picker label { margin: 0; }
 .category-picker span { display: flex; align-items: center; gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); cursor: pointer; }
 .category-picker input:checked + span { border-color: var(--primary); background: var(--primary-light); }
+.field-hint { margin: -2px 0 9px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.group-picker { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.group-picker label { min-width: 0; margin: 0; }
+.group-picker input { position: absolute; opacity: 0; }
+.group-picker > label > span { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 10px 11px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); cursor: pointer; }
+.group-picker > label > span::before { content: ""; width: 15px; height: 15px; flex: none; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+.group-picker input:checked + span { border-color: var(--primary); background: var(--primary-light); }
+.group-picker input:checked + span::before { content: "✓"; display: grid; place-items: center; border-color: var(--primary); background: var(--primary); color: white; font-size: 11px; }
+.group-picker input:focus-visible + span { box-shadow: 0 0 0 3px rgba(113,60,118,.14); }
+.group-picker input:disabled + span { opacity: .55; cursor: not-allowed; }
+.group-picker-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-picker-empty { grid-column: 1 / -1; padding: 11px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 11px; font-weight: 400; }
 .duration-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .optional { float: right; color: #aaa49a; font-weight: 400; }
 .form-error { min-height: 15px; margin: -7px 0 5px; color: #b64e3c; font-size: 11px; }
@@ -398,6 +410,7 @@ body[data-theme="noir"] .brand-mark .brand-check { stroke: #c9cdd0; }
   .entry-row { grid-template-columns: 40px minmax(0,1fr) auto auto; gap: 9px; }
   .entries-toolbar { display: grid; }
   dialog form { padding: 22px; }
+  .group-picker { grid-template-columns: 1fr; }
   .comparison-row { grid-template-columns: minmax(115px,.9fr) minmax(80px,1.4fr) auto; gap: 9px; }
   .comparison-cta { display: block; }
   .comparison-cta .primary-button { margin-top: 14px; }

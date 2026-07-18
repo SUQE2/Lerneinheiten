@@ -44,7 +44,7 @@ Für spätere Datenbankänderungen wird jeweils eine neue, zeitlich benannte SQL
 - Beitrittsanfragen, die erst ein Admin bestätigt
 - Einladungen deaktivieren, zeitlich begrenzen oder mit einem neuen Code versehen
 - synchronisierte Lernzeiten auf mehreren Geräten
-- Lernzeiten bearbeiten und wahlweise einer Gruppe zuordnen
+- Lernzeiten bearbeiten und beim Eintragen gleichzeitig mehreren Gruppen zuordnen
 - Sichtbarkeit pro Eintrag: **Ganze Gruppe**, **Nur Gruppenadmins** oder **Nur ich**
 - persönliches Wochenziel mit Fortschrittsanzeige
 - Export aller eigenen Einträge als CSV oder druckbare PDF

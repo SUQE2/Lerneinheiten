@@ -352,7 +352,11 @@
         <label>Minuten<input type="number" id="entryMinutes" min="0" max="59" value="30" inputmode="numeric"></label>
       </div>
       <label>Thema <span class="optional">optional</span><input type="text" id="entryTopic" maxlength="80" placeholder="z. B. Prüfungsvorbereitung"></label>
-      <label>Gruppe <span class="optional">optional</span><select id="entryGroupSelect"></select></label>
+      <fieldset id="entryGroupField">
+        <legend>Gruppen <span class="optional">optional</span></legend>
+        <p class="field-hint" id="entryGroupHint">Du kannst mehrere Gruppen gleichzeitig auswählen.</p>
+        <div class="group-picker" id="entryGroupPicker"></div>
+      </fieldset>
       <fieldset id="visibilityField">
         <legend>Sichtbarkeit</legend>
         <div class="visibility-picker">

@@ -534,11 +534,28 @@ function showView(view) {
 }
 
 function syncVisibilityAvailability() {
-  const hasGroup = Boolean($("#entryGroupSelect").value);
+  const hasGroup = selectedEntryGroupIds().length > 0;
   $$("input[name=visibility]").forEach(input => {
     input.disabled = !hasGroup && input.value !== "private";
   });
   if (!hasGroup) $("input[name=visibility][value=private]").checked = true;
+}
+
+function selectedEntryGroupIds() {
+  return $$("input[name=entryGroup]:checked").map(input => input.value);
+}
+
+function renderEntryGroupPicker(entry, editingOwnEntry) {
+  const selectedGroupId = entry?.groupId || group?.id || "";
+  $("#entryGroupPicker").innerHTML = groups.length
+    ? groups.map(item => `<label>
+        <input type="checkbox" name="entryGroup" value="${item.id}" ${item.id === selectedGroupId ? "checked" : ""} ${entry && !editingOwnEntry ? "disabled" : ""}>
+        <span><span class="group-picker-name">${escapeHtml(item.name)}</span></span>
+      </label>`).join("")
+    : '<div class="group-picker-empty">Du bist noch in keiner Gruppe. Der Eintrag bleibt privat.</div>';
+  $("#entryGroupHint").textContent = entry
+    ? "Beim Bearbeiten kann der Eintrag genau einer Gruppe zugeordnet werden."
+    : "Du kannst mehrere Gruppen gleichzeitig auswählen.";
 }
 
 function openDialog(entry = null) {
@@ -557,13 +574,9 @@ function openDialog(entry = null) {
   $("#entryMinutes").value = entry ? entry.minutes % 60 : 30;
   $("#entryTopic").value = entry?.topic || "";
   if (entry) $(`input[name=category][value=${entry.category}]`).checked = true;
-  $("#entryGroupSelect").innerHTML = '<option value="">Keine Gruppe · nur für mich</option>' + groups.map(item =>
-    `<option value="${item.id}">${escapeHtml(item.name)}</option>`
-  ).join("");
-  $("#entryGroupSelect").value = entry?.groupId || group?.id || "";
-  $("#entryGroupSelect").disabled = Boolean(entry) && !editingOwnEntry;
+  renderEntryGroupPicker(entry, editingOwnEntry);
   $("#formError").textContent = "";
-  const visibility = $(`input[name=visibility][value=${entry?.visibility || ($("#entryGroupSelect").value ? "group" : "private")}]`);
+  const visibility = $(`input[name=visibility][value=${entry?.visibility || (selectedEntryGroupIds().length ? "group" : "private")}]`);
   if (visibility) visibility.checked = true;
   syncVisibilityAvailability();
   $("input[name=visibility][value=private]").disabled = !editingOwnEntry;
@@ -858,7 +871,14 @@ $$('.nav-item').forEach(button => button.addEventListener('click', () => showVie
 $$('[data-go]').forEach(button => button.addEventListener('click', () => showView(button.dataset.go)));
 $(".brand").addEventListener("click", event => { event.preventDefault(); showView("woche"); });
 $("#openEntryButton").addEventListener("click", () => openDialog());
-$("#entryGroupSelect").addEventListener("change", syncVisibilityAvailability);
+$("#entryGroupPicker").addEventListener("change", event => {
+  if (editingEntryId && event.target.matches("input[name=entryGroup]") && event.target.checked) {
+    $$("input[name=entryGroup]").forEach(input => {
+      if (input !== event.target) input.checked = false;
+    });
+  }
+  syncVisibilityAvailability();
+});
 $("#closeDialog").addEventListener("click", () => { editingEntryId = null; editingEntryOwnerId = null; $("#entryDialog").close(); });
 $("#entryDialog").addEventListener("click", event => {
   if (event.target === $("#entryDialog")) $("#entryDialog").close();
@@ -883,10 +903,9 @@ $("#entryForm").addEventListener("submit", async event => {
     return;
   }
 
-  const id = editingEntryId || crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-  const selectedGroupId = $("#entryGroupSelect").value || null;
+  const selectedGroupIds = selectedEntryGroupIds();
+  const selectedGroupId = selectedGroupIds[0] || null;
   const entry = {
-    id,
     date: $("#entryDate").value,
     category: $("input[name=category]:checked").value,
     minutes: total,
@@ -897,7 +916,6 @@ $("#entryForm").addEventListener("submit", async event => {
   };
 
   const payload = {
-    group_id: entry.groupId,
     entry_date: entry.date,
     category: entry.category,
     minutes: entry.minutes,
@@ -905,9 +923,21 @@ $("#entryForm").addEventListener("submit", async event => {
     visibility: entry.visibility,
     updated_at: new Date().toISOString()
   };
-  const result = editingEntryId
-    ? await cloud.from("entries").update(payload).eq("id", editingEntryId)
-    : await cloud.from("entries").insert({ ...payload, id: entry.id, user_id: session.user.id, created_at: new Date(entry.createdAt).toISOString() });
+  let result;
+  if (editingEntryId) {
+    result = await cloud.from("entries").update({ ...payload, group_id: selectedGroupId }).eq("id", editingEntryId);
+  } else {
+    const targetGroupIds = selectedGroupIds.length ? selectedGroupIds : [null];
+    const createdAt = new Date(entry.createdAt).toISOString();
+    const rows = targetGroupIds.map((groupId, index) => ({
+      ...payload,
+      id: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
+      user_id: session.user.id,
+      group_id: groupId,
+      created_at: createdAt
+    }));
+    result = await cloud.from("entries").insert(rows);
+  }
   const { error } = result;
   if (error) {
     $("#formError").textContent = readableError(error);
@@ -922,7 +952,14 @@ $("#entryForm").addEventListener("submit", async event => {
   const wasEditing = Boolean(editingEntryId);
   editingEntryId = null;
   editingEntryOwnerId = null;
-  showToast(wasEditing ? "Eintrag wurde aktualisiert" : entry.visibility === "group" ? "Lernzeit wurde mit der Gruppe geteilt" : "Lernzeit wurde gespeichert");
+  const saveMessage = selectedGroupIds.length > 1
+    ? entry.visibility === "group"
+      ? `Lernzeit wurde mit ${selectedGroupIds.length} Gruppen geteilt`
+      : `Lernzeit wurde für ${selectedGroupIds.length} Gruppen gespeichert`
+    : entry.visibility === "group"
+      ? "Lernzeit wurde mit der Gruppe geteilt"
+      : "Lernzeit wurde gespeichert";
+  showToast(wasEditing ? "Eintrag wurde aktualisiert" : saveMessage);
 });
 
 document.addEventListener("click", async event => {
