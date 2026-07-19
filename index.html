@@ -95,8 +95,17 @@
             </article>
           </div>
 
-          <article class="panel weekly-review-panel">
-            <div class="panel-heading"><div><p class="eyebrow">Dein Wochenrückblick</p><h2>Was diese Woche besonders war</h2></div></div>
+          <article class="panel focus-balance-panel weekly-review-panel merged-weekly-review">
+            <div class="panel-heading">
+              <div><p class="eyebrow">Dein Wochenrückblick</p><h2>Deine Woche auf einen Blick</h2></div>
+              <strong id="weekFocusRate" class="focus-rate">–</strong>
+            </div>
+            <div class="focus-balance-times">
+              <div><span>Daran gesessen</span><strong id="weekElapsed">0 Min.</strong></div>
+              <div><span>Tatsächlich gelernt</span><strong id="weekLearned">0 Min.</strong></div>
+            </div>
+            <div class="focus-track" aria-hidden="true"><span id="weekFocusBar"></span></div>
+            <div class="focus-detail-row"><p class="muted" id="weekUnfocused">Noch keine Zeit erfasst.</p><strong id="weekFocusTrend" class="focus-trend">Noch kein Vergleich</strong></div>
             <div class="weekly-review-grid" id="weeklyReview"></div>
           </article>
 
@@ -131,14 +140,6 @@
             </article>
           </div>
 
-          <article class="panel recent-panel">
-            <div class="panel-heading">
-              <div><p class="eyebrow">Zuletzt erfasst</p><h2>Einträge dieser Woche</h2></div>
-              <button class="text-button" data-go="eintraege">Alle ansehen →</button>
-            </div>
-            <div id="weekEntries" class="entry-list"></div>
-          </article>
-
           <article class="panel comparison-panel">
             <div class="panel-heading">
               <div><p class="eyebrow">Freundeskreis</p><h2>Wochenvergleich</h2></div>
@@ -171,7 +172,7 @@
               <div class="month-calendar" id="monthCalendar"></div>
             </article>
             <article class="panel category-panel">
-              <div class="panel-heading"><div><p class="eyebrow">Verteilung</p><h2>Bereiche</h2></div></div>
+              <div class="panel-heading"><div><p class="eyebrow">Fokusqualität</p><h2>Nach Bereich</h2></div></div>
               <div id="monthCategories" class="category-list"></div>
             </article>
           </div>
@@ -203,7 +204,7 @@
               <div class="year-chart" id="yearChart"></div>
             </article>
             <article class="panel category-panel">
-              <div class="panel-heading"><div><p class="eyebrow">Gesamtfokus</p><h2>Bereiche</h2></div></div>
+              <div class="panel-heading"><div><p class="eyebrow">Gesamtfokus</p><h2>Nach Bereich</h2></div></div>
               <div id="yearCategories" class="category-list"></div>
             </article>
           </div>
@@ -367,10 +368,29 @@
           <label><input type="radio" name="category" value="sonstiges"><span><i class="dot sonstiges"></i>Sonstiges</span></label>
         </div>
       </fieldset>
-      <div class="duration-row">
-        <label>Stunden<input type="number" id="entryHours" min="0" max="23" value="0" inputmode="numeric"></label>
-        <label>Minuten<input type="number" id="entryMinutes" min="0" max="59" value="30" inputmode="numeric"></label>
-      </div>
+      <fieldset class="time-comparison-fields">
+        <legend>Zeitvergleich</legend>
+        <p class="field-hint">Gesamte Zeit und echte Lernzeit getrennt eintragen.</p>
+        <div class="time-input-row">
+          <div class="time-input-copy"><strong>Daran gesessen</strong><small>Gesamte Zeit am Lernplatz</small></div>
+          <div class="compact-duration-inputs">
+            <label><input type="number" id="elapsedHours" min="0" max="23" value="0" inputmode="numeric" aria-label="Daran gesessen, Stunden"><span>Std.</span></label>
+            <label><input type="number" id="elapsedMinutes" min="0" max="59" value="30" inputmode="numeric" aria-label="Daran gesessen, Minuten"><span>Min.</span></label>
+          </div>
+        </div>
+        <div class="time-input-row learned-time-row">
+          <div class="time-input-copy"><strong>Tatsächlich gelernt</strong><small>Konzentrierte Lernzeit</small></div>
+          <div class="compact-duration-inputs">
+            <label><input type="number" id="entryHours" min="0" max="23" value="0" inputmode="numeric" aria-label="Tatsächlich gelernt, Stunden"><span>Std.</span></label>
+            <label><input type="number" id="entryMinutes" min="0" max="59" value="30" inputmode="numeric" aria-label="Tatsächlich gelernt, Minuten"><span>Min.</span></label>
+          </div>
+        </div>
+        <div class="entry-focus-preview" id="entryFocusPreview" aria-live="polite">
+          <div><span>Deine Fokusquote</span><strong id="entryFocusPreviewRate">100%</strong></div>
+          <div class="entry-focus-preview-track" aria-hidden="true"><span id="entryFocusPreviewBar"></span></div>
+          <small id="entryFocusPreviewText">30 Min. gelernt von 30 Min. gesessen</small>
+        </div>
+      </fieldset>
       <label>Thema <span class="optional">optional</span><input type="text" id="entryTopic" maxlength="80" placeholder="z. B. Prüfungsvorbereitung"></label>
       <fieldset id="entryGroupField">
         <legend>Gruppen <span class="optional">optional</span></legend>

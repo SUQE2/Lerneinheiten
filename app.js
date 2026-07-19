@@ -10,7 +10,10 @@ const categories = {
 const dayNames = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const monthNames = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const shortMonths = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
-const memberColors = ["#713c76", "#ee7658", "#665d9f", "#a64f70", "#efa94f", "#845c91", "#d65f68", "#5f568e", "#8f477a", "#ba694e"];
+const memberColors = {
+  sunset: ["#713c76", "#ee7658", "#665d9f", "#a64f70", "#efa94f", "#845c91", "#d65f68", "#5f568e", "#8f477a", "#ba694e"],
+  noir: ["#263746", "#334b5e", "#3e4651", "#27434b", "#43394a", "#4b3b42", "#2e4057", "#46545d", "#304942", "#4a4652"]
+};
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -107,6 +110,19 @@ function sum(items) {
   return items.reduce((total, item) => total + item.minutes, 0);
 }
 
+function elapsedMinutes(entry) {
+  return Math.max(entry.minutes, entry.elapsedMinutes ?? entry.minutes);
+}
+
+function sumElapsed(items) {
+  return items.reduce((total, item) => total + elapsedMinutes(item), 0);
+}
+
+function focusRate(items) {
+  const elapsed = sumElapsed(items);
+  return elapsed ? Math.round(sum(items) / elapsed * 100) : 0;
+}
+
 function consolidateOwnEntries(items) {
   return window.LernzeitLogic.consolidateEntries(items);
 }
@@ -155,7 +171,7 @@ function applyTheme(theme, persist = true) {
   document.body.dataset.theme = appearanceTheme;
   if (persist) localStorage.setItem(THEME_KEY, appearanceTheme);
   const themeColor = document.querySelector('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = appearanceTheme === "noir" ? "#171a1f" : "#342041";
+  if (themeColor) themeColor.content = appearanceTheme === "noir" ? "#0c141b" : "#342041";
   $$('[data-theme-choice]').forEach(button => {
     const active = button.dataset.themeChoice === appearanceTheme;
     button.classList.toggle("active", active);
@@ -169,7 +185,8 @@ function memberName(userId) {
 
 function memberColor(userId) {
   const index = Math.max(0, members.findIndex(member => member.id === userId));
-  return memberColors[index % memberColors.length];
+  const palette = memberColors[appearanceTheme] || memberColors.sunset;
+  return palette[index % palette.length];
 }
 
 function currentMember() {
@@ -189,13 +206,15 @@ function initials(name) {
 }
 
 function renderCategoryList(element, items) {
-  const total = sum(items);
   element.innerHTML = Object.entries(categories).map(([key, category]) => {
-    const amount = sum(items.filter(entry => entry.category === key));
-    const percent = total ? Math.round(amount / total * 100) : 0;
-    return `<div>
-      <div class="category-name-row"><span class="category-name"><i class="dot ${key}"></i>${category.label}</span><span class="category-value">${formatDuration(amount)} · ${percent}%</span></div>
-      <div class="progress-track"><div class="progress-value" style="width:${percent}%;background:${category.color}"></div></div>
+    const categoryItems = items.filter(entry => entry.category === key);
+    const learned = sum(categoryItems);
+    const elapsed = sumElapsed(categoryItems);
+    const rate = focusRate(categoryItems);
+    return `<div class="category-focus-item">
+      <div class="category-name-row"><span class="category-name"><i class="dot ${key}"></i>${category.label}</span><span class="category-value">${elapsed ? `<strong>${rate}% Fokus</strong>` : "–"}</span></div>
+      <div class="category-focus-times">${elapsed ? `${formatDuration(learned)} gelernt · ${formatDuration(elapsed)} gesessen` : "Noch keine Zeit"}</div>
+      <div class="progress-track"><div class="progress-value" style="width:${rate}%;background:${category.color}"></div></div>
     </div>`;
   }).join("");
 }
@@ -222,7 +241,7 @@ function entryRows(items, emptyText, options = {}) {
       return `<div class="entry-row">
         <div class="entry-date"><strong>${date.getDate()}</strong><span>${shortMonths[date.getMonth()]}</span></div>
         <div class="entry-info"><strong>${escapeHtml(entry.topic || "Lerneinheit")}</strong><span>${owner}<i class="entry-dot ${entry.category}"></i>${category.label} · ${dayNames[(date.getDay() + 6) % 7]}</span></div>
-        <span class="entry-duration">${formatDuration(entry.minutes)}</span>
+        <span class="entry-duration"><strong>${formatDuration(entry.minutes)}</strong><small>von ${formatDuration(elapsedMinutes(entry))} gesessen</small></span>
         <div class="entry-actions">
           ${canEdit ? `<button class="edit-button" data-edit="${entry.id}" aria-label="Eintrag bearbeiten" title="Eintrag bearbeiten">✎</button>` : ""}
           ${canDelete ? `<button class="delete-button" data-delete="${entry.id}" aria-label="Eintrag löschen" title="Eintrag löschen">×</button>` : ""}
@@ -268,7 +287,7 @@ function renderComparison(element, start, end) {
     return `<div class="comparison-row" style="--avatar:${color}">
       <div class="person"><span class="avatar">${initials(member.displayName)}</span><span><strong>${escapeHtml(member.displayName)}${member.id === session.user.id ? " · Du" : ""}</strong><small>${escapeHtml(detail)}</small></span></div>
       <div class="comparison-bar-wrap"><div class="comparison-bar"><span style="--width:${total / maximum * 100}%"></span></div><div class="category-dots">${dots}</div></div>
-      <strong class="comparison-total">${compactDuration(total)}</strong>
+      <strong class="comparison-total">${compactDuration(total)}<small>von ${compactDuration(sumElapsed(items))}</small></strong>
     </div>`;
   }).join("")}</div>`;
 }
@@ -277,13 +296,36 @@ function renderWeek() {
   const end = addDays(weekCursor, 6);
   const weekEntries = entriesBetween(weekCursor, end);
   const total = sum(weekEntries);
+  const elapsedTotal = sumElapsed(weekEntries);
+  const rate = focusRate(weekEntries);
   const activeDates = new Set(weekEntries.map(entry => entry.date));
-  const previousTotal = sum(entriesBetween(addDays(weekCursor, -7), addDays(weekCursor, -1)));
+  const previousWeekEntries = entriesBetween(addDays(weekCursor, -7), addDays(weekCursor, -1));
+  const previousTotal = sum(previousWeekEntries);
+  const previousElapsedTotal = sumElapsed(previousWeekEntries);
+  const previousRate = focusRate(previousWeekEntries);
   renderWeekMotivation();
 
   $("#weekLabel").textContent = `KW ${getWeekNumber(weekCursor)}`;
   $("#weekDateRange").textContent = `${weekCursor.getDate()}. ${shortMonths[weekCursor.getMonth()]} – ${end.getDate()}. ${shortMonths[end.getMonth()]} ${end.getFullYear()}`;
   $("#weekTotal").textContent = formatDuration(total);
+  $("#weekLearned").textContent = formatDuration(total);
+  $("#weekElapsed").textContent = formatDuration(elapsedTotal);
+  $("#weekFocusRate").textContent = elapsedTotal ? `${rate}% Fokus` : "–";
+  $("#weekFocusBar").style.width = `${rate}%`;
+  $("#weekUnfocused").textContent = elapsedTotal
+    ? total === elapsedTotal
+      ? "Die gesamte erfasste Zeit war echte Lernzeit."
+      : `${formatDuration(elapsedTotal - total)} gingen für Pausen, Ablenkung oder Organisation drauf.`
+    : "Noch keine Zeit erfasst.";
+  const focusTrend = $("#weekFocusTrend");
+  focusTrend.classList.remove("positive", "negative");
+  if (!elapsedTotal) focusTrend.textContent = "Diese Woche noch offen";
+  else if (!previousElapsedTotal) focusTrend.textContent = "Noch kein Vergleich zur Vorwoche";
+  else {
+    const focusDelta = rate - previousRate;
+    focusTrend.textContent = `Vorwoche ${previousRate}% · ${focusDelta >= 0 ? "+" : ""}${focusDelta} Punkte`;
+    focusTrend.classList.add(focusDelta >= 0 ? "positive" : "negative");
+  }
   const goalPercent = Math.min(100, Math.round(total / weeklyGoalMinutes * 100));
   $("#goalProgressText").textContent = `${compactDuration(total)} von ${compactDuration(weeklyGoalMinutes)}`;
   $("#goalProgressBar").style.width = `${goalPercent}%`;
@@ -335,7 +377,6 @@ function renderWeek() {
   }).join("");
 
   renderCategoryList($("#weekCategories"), weekEntries);
-  $("#weekEntries").innerHTML = entryRows(weekEntries.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4), "Für diese Woche gibt es noch keine Einträge.");
   renderComparison($("#weekComparison"), weekCursor, end);
 }
 
@@ -372,7 +413,7 @@ function renderMonth() {
   const active = new Set(items.map(entry => entry.date)).size;
   $("#monthLabel").textContent = `${monthNames[month]} ${year}`;
   $("#monthTotal").textContent = formatDuration(total);
-  $("#monthSessions").textContent = `${items.length} ${items.length === 1 ? "Eintrag" : "Einträge"}`;
+  $("#monthSessions").textContent = `${formatDuration(sumElapsed(items))} daran gesessen · ${focusRate(items)}% Fokus`;
   $("#monthActive").textContent = active;
   $("#monthAverage").textContent = formatDuration(active ? Math.round(total / active) : 0);
 
@@ -401,7 +442,7 @@ function renderYear() {
   $("#yearLabel").textContent = yearCursor;
   $("#yearHeroYear").textContent = yearCursor;
   $("#yearTotal").textContent = formatDuration(sum(items));
-  $("#yearSessions").textContent = `${items.length} ${items.length === 1 ? "Eintrag" : "Einträge"}`;
+  $("#yearSessions").textContent = `${formatDuration(sumElapsed(items))} daran gesessen · ${focusRate(items)}% Fokus`;
   $("#yearActiveMonths").innerHTML = `${totals.filter(Boolean).length} <small>/ 12</small>`;
   $("#bestMonth").textContent = best ? monthNames[bestIndex] : "–";
   $("#bestMonthDetail").textContent = best ? formatDuration(best) : "Noch offen";
@@ -421,7 +462,7 @@ function renderAllEntries() {
     (category === "all" || entry.category === category) &&
     (!search || (entry.topic || "Lerneinheit").toLowerCase().includes(search))
   );
-  $("#allEntriesTotal").textContent = formatDuration(sum(filtered));
+  $("#allEntriesTotal").textContent = `${formatDuration(sum(filtered))} gelernt · ${formatDuration(sumElapsed(filtered))} gesessen`;
   $("#allEntries").innerHTML = entryRows(filtered, "Keine passenden Einträge gefunden.", { showGroup: true, showVisibility: true });
 }
 
@@ -532,7 +573,8 @@ function renderGroup() {
       : "Ein Admin kann ein gemeinsames Ziel festlegen.";
   }
   $("#groupMembers").innerHTML = members.map(member => {
-    const total = sum(publicWeekEntries.filter(entry => entry.ownerId === member.id));
+    const memberEntries = publicWeekEntries.filter(entry => entry.ownerId === member.id);
+    const total = sum(memberEntries);
     const canSetRole = ownMember?.role === "owner" && member.role !== "owner";
     const canRemove = member.id !== session.user.id && member.role !== "owner" &&
       (ownMember?.role === "owner" || (ownMember?.role === "admin" && member.role === "member"));
@@ -549,7 +591,8 @@ function renderGroup() {
       <span class="avatar">${initials(member.displayName)}</span>
       <strong>${escapeHtml(member.displayName)}${member.id === session.user.id ? " · Du" : ""}</strong>
       ${roleControl}
-      <strong class="member-time">${compactDuration(total)}</strong>
+      <span class="member-learning-time"><strong>${compactDuration(total)}</strong><small>tatsächlich gelernt</small></span>
+      <span class="member-focus-meta"><strong>${focusRate(memberEntries)}% Fokus</strong><small>von ${compactDuration(sumElapsed(memberEntries))} gesessen</small></span>
       ${removeControl}
     </div>`;
   }).join("");
@@ -656,6 +699,22 @@ function renderEntryGroupPicker(entry, editingOwnEntry) {
       : "Du kannst mehrere Gruppen gleichzeitig auswählen.";
 }
 
+function renderEntryFocusPreview() {
+  const learned = Number($("#entryHours").value || 0) * 60 + Number($("#entryMinutes").value || 0);
+  const elapsed = Number($("#elapsedHours").value || 0) * 60 + Number($("#elapsedMinutes").value || 0);
+  const preview = $("#entryFocusPreview");
+  const rate = elapsed ? Math.round(learned / elapsed * 100) : 0;
+  const valid = learned <= elapsed;
+  preview.classList.toggle("invalid", !valid);
+  $("#entryFocusPreviewRate").textContent = elapsed ? `${rate}%` : "–";
+  $("#entryFocusPreviewBar").style.width = `${Math.max(0, Math.min(100, rate))}%`;
+  $("#entryFocusPreviewText").textContent = !elapsed
+    ? "Trage zuerst ein, wie lange du daran gesessen hast."
+    : valid
+      ? `${formatDuration(learned)} gelernt von ${formatDuration(elapsed)} gesessen`
+      : `Die Lernzeit ist ${formatDuration(learned - elapsed)} länger als die gesamte Sitzzeit.`;
+}
+
 function openDialog(entry = null) {
   if (!session) {
     openAuthDialog();
@@ -671,6 +730,10 @@ function openDialog(entry = null) {
   $("#entryDate").value = entry?.date || localISO(new Date());
   $("#entryHours").value = entry ? Math.floor(entry.minutes / 60) : 0;
   $("#entryMinutes").value = entry ? entry.minutes % 60 : 30;
+  const elapsed = entry ? elapsedMinutes(entry) : 30;
+  $("#elapsedHours").value = Math.floor(elapsed / 60);
+  $("#elapsedMinutes").value = elapsed % 60;
+  renderEntryFocusPreview();
   $("#entryTopic").value = entry?.topic || "";
   if (entry) $(`input[name=category][value=${entry.category}]`).checked = true;
   renderEntryGroupPicker(entry, editingOwnEntry);
@@ -745,6 +808,7 @@ function mapCloudEntry(row) {
     date: row.entry_date,
     category: row.category,
     minutes: row.minutes,
+    elapsedMinutes: row.elapsed_minutes ?? row.minutes,
     topic: row.topic,
     visibility: row.visibility,
     createdAt: new Date(row.created_at).getTime(),
@@ -763,6 +827,7 @@ async function migrateLocalEntries() {
     entry_date: entry.date,
     category: entry.category,
     minutes: entry.minutes,
+    elapsed_minutes: entry.elapsedMinutes ?? entry.minutes,
     topic: entry.topic || "",
     visibility: "private",
     created_at: new Date(entry.createdAt || Date.now()).toISOString()
@@ -775,11 +840,11 @@ async function migrateLocalEntries() {
 
 async function fetchCloudEntries() {
   let result = await cloud.from("entries")
-    .select("id, user_id, group_id, entry_date, category, minutes, topic, visibility, created_at, updated_at, deleted_at, entry_groups(group_id)")
+    .select("id, user_id, group_id, entry_date, category, minutes, elapsed_minutes, topic, visibility, created_at, updated_at, deleted_at, entry_groups(group_id)")
     .is("deleted_at", null)
     .order("entry_date", { ascending: false })
     .order("created_at", { ascending: false });
-  if (result.error && /entry_groups|deleted_at/i.test(result.error.message || "")) {
+  if (result.error && /entry_groups|deleted_at|elapsed_minutes/i.test(result.error.message || "")) {
     result = await cloud.from("entries")
       .select("id, user_id, group_id, entry_date, category, minutes, topic, visibility, created_at, updated_at")
       .order("entry_date", { ascending: false })
@@ -798,6 +863,7 @@ function commandToEntry(command) {
     date: command.date,
     category: command.category,
     minutes: command.minutes,
+    elapsedMinutes: command.elapsedMinutes,
     topic: command.topic,
     visibility: command.groupIds.length ? command.visibility : "private",
     createdAt: command.createdAt,
@@ -822,12 +888,17 @@ function isConnectionError(error) {
   return !navigator.onLine || /failed to fetch|network|load failed/i.test(error?.message || "");
 }
 
+function isPendingTimeComparisonMigration(error) {
+  return /elapsed_minutes|target_elapsed_minutes/i.test(error?.message || "");
+}
+
 async function persistLearningCommand(command) {
   if (command.managed) {
     return cloud.from("entries").update({
       entry_date: command.date,
       category: command.category,
       minutes: command.minutes,
+      elapsed_minutes: command.elapsedMinutes,
       topic: command.topic,
       visibility: command.visibility,
       updated_at: new Date().toISOString()
@@ -838,6 +909,7 @@ async function persistLearningCommand(command) {
     target_entry_date: command.date,
     target_category: command.category,
     target_minutes: command.minutes,
+    target_elapsed_minutes: command.elapsedMinutes,
     target_topic: command.topic,
     target_visibility: command.visibility,
     target_group_ids: command.groupIds
@@ -848,6 +920,7 @@ async function persistLearningCommand(command) {
     entry_date: command.date,
     category: command.category,
     minutes: command.minutes,
+    elapsed_minutes: command.elapsedMinutes,
     topic: command.topic,
     visibility: command.groupIds.length ? command.visibility : "private",
     updated_at: new Date().toISOString()
@@ -1130,6 +1203,8 @@ $$('.nav-item').forEach(button => button.addEventListener('click', () => showVie
 $$('[data-go]').forEach(button => button.addEventListener('click', () => showView(button.dataset.go)));
 $(".brand").addEventListener("click", event => { event.preventDefault(); showView("woche"); });
 $("#openEntryButton").addEventListener("click", () => openDialog());
+[$("#elapsedHours"), $("#elapsedMinutes"), $("#entryHours"), $("#entryMinutes")]
+  .forEach(input => input.addEventListener("input", renderEntryFocusPreview));
 $("#entryGroupPicker").addEventListener("change", syncVisibilityAvailability);
 $("#closeDialog").addEventListener("click", () => { editingEntryId = null; editingEntryIds = []; editingEntryOwnerId = null; $("#entryDialog").close(); });
 $("#entryDialog").addEventListener("click", event => {
@@ -1146,12 +1221,19 @@ $("#entryForm").addEventListener("submit", async event => {
   const hours = Number($("#entryHours").value || 0);
   const minutes = Number($("#entryMinutes").value || 0);
   const total = hours * 60 + minutes;
+  const elapsedHours = Number($("#elapsedHours").value || 0);
+  const elapsedPartMinutes = Number($("#elapsedMinutes").value || 0);
+  const elapsedTotal = elapsedHours * 60 + elapsedPartMinutes;
   if (!total || total < 1) {
     $("#formError").textContent = "Bitte trage eine Dauer von mindestens einer Minute ein.";
     return;
   }
-  if (minutes > 59 || hours > 23 || total > 1439) {
+  if (minutes > 59 || hours > 23 || total > 1439 || elapsedPartMinutes > 59 || elapsedHours > 23 || elapsedTotal > 1439) {
     $("#formError").textContent = "Bitte prüfe Stunden und Minuten.";
+    return;
+  }
+  if (elapsedTotal < total) {
+    $("#formError").textContent = "Die tatsächliche Lernzeit kann nicht länger sein als die Zeit, die du daran gesessen hast.";
     return;
   }
 
@@ -1164,6 +1246,7 @@ $("#entryForm").addEventListener("submit", async event => {
     date: $("#entryDate").value,
     category: $("input[name=category]:checked").value,
     minutes: total,
+    elapsedMinutes: elapsedTotal,
     topic: $("#entryTopic").value.trim(),
     groupIds: selectedGroupIds,
     visibility: selectedGroupIds.length ? $("input[name=visibility]:checked").value : "private",
@@ -1171,6 +1254,7 @@ $("#entryForm").addEventListener("submit", async event => {
   };
   setEntryFormSaving(true);
   let queuedOffline = false;
+  let queueReason = null;
   try {
     if (!navigator.onLine) {
       if (command.managed) {
@@ -1179,15 +1263,19 @@ $("#entryForm").addEventListener("submit", async event => {
       }
       queueLearningCommand(command);
       queuedOffline = true;
+      queueReason = "offline";
     } else {
       const { error } = await persistLearningCommand(command);
-      if (error && isConnectionError(error)) {
+      if (error && (isConnectionError(error) || isPendingTimeComparisonMigration(error))) {
         if (command.managed) {
-          $("#formError").textContent = "Fremde Gruppeneinträge können nur online bearbeitet werden.";
+          $("#formError").textContent = isPendingTimeComparisonMigration(error)
+            ? "Dieser Gruppeneintrag kann erst nach dem Datenbank-Update geändert werden."
+            : "Fremde Gruppeneinträge können nur online bearbeitet werden.";
           return;
         }
         queueLearningCommand(command);
         queuedOffline = true;
+        queueReason = isPendingTimeComparisonMigration(error) ? "migration" : "offline";
       } else if (error) {
         $("#formError").textContent = readableError(error);
         return;
@@ -1202,6 +1290,8 @@ $("#entryForm").addEventListener("submit", async event => {
   $("#entryDialog").close();
   $("#entryHours").value = 0;
   $("#entryMinutes").value = 30;
+  $("#elapsedHours").value = 0;
+  $("#elapsedMinutes").value = 30;
   $("#entryTopic").value = "";
   editingEntryId = null;
   editingEntryIds = [];
@@ -1213,7 +1303,11 @@ $("#entryForm").addEventListener("submit", async event => {
     : command.visibility === "group"
       ? "Lernzeit wurde mit der Gruppe geteilt"
       : "Lernzeit wurde gespeichert";
-  showToast(queuedOffline ? "Offline gespeichert – wird später synchronisiert" : wasEditing ? "Eintrag wurde aktualisiert" : saveMessage);
+  showToast(queuedOffline
+    ? queueReason === "migration"
+      ? "Lokal vorgemerkt – wird nach dem Datenbank-Update synchronisiert"
+      : "Offline gespeichert – wird später synchronisiert"
+    : wasEditing ? "Eintrag wurde aktualisiert" : saveMessage);
 });
 
 document.addEventListener("click", async event => {
@@ -1357,10 +1451,12 @@ function exportEntriesCsv() {
     if (/^[=+\-@]/.test(text)) text = `'${text}`;
     return `"${text.replaceAll('"', '""')}"`;
   };
-  const rows = [["Datum", "Bereich", "Dauer (Minuten)", "Thema", "Gruppe", "Sichtbarkeit"], ...entries.map(entry => [
+  const rows = [["Datum", "Bereich", "Tatsächlich gelernt (Minuten)", "Daran gesessen (Minuten)", "Fokusanteil (%)", "Thema", "Gruppe", "Sichtbarkeit"], ...entries.map(entry => [
     entry.date,
     categories[entry.category]?.label || entry.category,
     entry.minutes,
+    elapsedMinutes(entry),
+    Math.round(entry.minutes / elapsedMinutes(entry) * 100),
     entry.topic,
     entryGroupNames(entry).join(", ") || "Keine",
     { group: "Gruppe", admins: "Admins", private: "Nur ich" }[entry.visibility]
@@ -1550,11 +1646,13 @@ $$('[data-theme-choice]').forEach(button => button.addEventListener("click", asy
   const nextTheme = button.dataset.themeChoice;
   if (nextTheme === previousTheme) return;
   applyTheme(nextTheme);
+  renderAll();
   const { error } = await cloud.from("profiles")
     .update({ appearance_theme: nextTheme })
     .eq("id", session.user.id);
   if (error) {
     applyTheme(previousTheme);
+    renderAll();
     return showToast(readableError(error));
   }
   if (profile) profile.appearanceTheme = nextTheme;

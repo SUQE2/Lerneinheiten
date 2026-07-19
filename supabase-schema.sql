@@ -36,6 +36,7 @@ create table if not exists public.entries (
   entry_date date not null,
   category text not null check (category in ('studium', 'arbeit', 'persoenlich', 'sonstiges')),
   minutes integer not null check (minutes between 1 and 1439),
+  elapsed_minutes integer not null check (elapsed_minutes between minutes and 1439),
   topic text not null default '' check (char_length(topic) <= 80),
   visibility text not null default 'private' check (visibility in ('group', 'admins', 'private')),
   created_at timestamptz not null default now(),
@@ -882,6 +883,12 @@ create table if not exists public.group_weekly_goals (
 );
 
 alter table public.entries add column if not exists deleted_at timestamptz;
+alter table public.entries add column if not exists elapsed_minutes integer;
+update public.entries set elapsed_minutes = minutes where elapsed_minutes is null;
+alter table public.entries alter column elapsed_minutes set not null;
+alter table public.entries drop constraint if exists entries_elapsed_minutes_check;
+alter table public.entries
+  add constraint entries_elapsed_minutes_check check (elapsed_minutes between minutes and 1439);
 
 insert into public.entry_groups (entry_id, group_id)
 select id, group_id from public.entries where group_id is not null
@@ -952,11 +959,14 @@ as $$
   );
 $$;
 
+drop function if exists public.save_learning_entry(uuid, date, text, integer, text, text, uuid[]);
+
 create or replace function public.save_learning_entry(
   target_entry_id uuid,
   target_entry_date date,
   target_category text,
   target_minutes integer,
+  target_elapsed_minutes integer,
   target_topic text,
   target_visibility text,
   target_group_ids uuid[] default '{}'
@@ -972,6 +982,9 @@ declare
 begin
   if (select auth.uid()) is null then raise exception 'Du musst angemeldet sein.'; end if;
   if target_entry_id is null then raise exception 'Eintrag-ID fehlt.'; end if;
+  if target_elapsed_minutes is null or target_elapsed_minutes < target_minutes or target_elapsed_minutes > 1439 then
+    raise exception 'Die gesamte Sitzzeit muss mindestens der tatsächlichen Lernzeit entsprechen.';
+  end if;
   if exists (
     select 1 from public.entries
     where id = target_entry_id and user_id <> (select auth.uid())
@@ -983,7 +996,7 @@ begin
   if cardinality(cleaned_group_ids) = 0 then cleaned_visibility := 'private'; end if;
 
   insert into public.entries (
-    id, user_id, group_id, entry_date, category, minutes, topic, visibility, deleted_at, updated_at
+    id, user_id, group_id, entry_date, category, minutes, elapsed_minutes, topic, visibility, deleted_at, updated_at
   ) values (
     target_entry_id,
     (select auth.uid()),
@@ -991,6 +1004,7 @@ begin
     target_entry_date,
     target_category,
     target_minutes,
+    target_elapsed_minutes,
     coalesce(trim(target_topic), ''),
     cleaned_visibility,
     null,
@@ -1001,6 +1015,7 @@ begin
     entry_date = excluded.entry_date,
     category = excluded.category,
     minutes = excluded.minutes,
+    elapsed_minutes = excluded.elapsed_minutes,
     topic = excluded.topic,
     visibility = excluded.visibility,
     deleted_at = null,
@@ -1188,14 +1203,14 @@ grant select on public.entry_groups, public.group_weekly_goals to authenticated;
 
 revoke all on function public.can_view_entry(uuid, text) from public;
 revoke all on function public.can_manage_entry(uuid) from public;
-revoke all on function public.save_learning_entry(uuid, date, text, integer, text, text, uuid[]) from public;
+revoke all on function public.save_learning_entry(uuid, date, text, integer, integer, text, text, uuid[]) from public;
 revoke all on function public.restore_own_entry(uuid) from public;
 revoke all on function public.remove_entry_from_group(uuid, uuid) from public;
 revoke all on function public.set_group_weekly_goal(uuid, integer) from public;
 revoke all on function public.remove_departed_member_entry_groups() from public;
 grant execute on function public.can_view_entry(uuid, text) to authenticated;
 grant execute on function public.can_manage_entry(uuid) to authenticated;
-grant execute on function public.save_learning_entry(uuid, date, text, integer, text, text, uuid[]) to authenticated;
+grant execute on function public.save_learning_entry(uuid, date, text, integer, integer, text, text, uuid[]) to authenticated;
 grant execute on function public.restore_own_entry(uuid) to authenticated;
 grant execute on function public.remove_entry_from_group(uuid, uuid) to authenticated;
 grant execute on function public.set_group_weekly_goal(uuid, integer) to authenticated;

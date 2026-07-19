@@ -55,5 +55,19 @@
     return { current, best };
   }
 
-  return { consolidateEntries, calculateStreaks };
+  function calculateTimeBalance(items) {
+    const learnedMinutes = items.reduce((total, entry) => total + entry.minutes, 0);
+    const elapsedMinutes = items.reduce((total, entry) => {
+      const elapsed = entry.elapsedMinutes ?? entry.minutes;
+      return total + Math.max(entry.minutes, elapsed);
+    }, 0);
+    return {
+      learnedMinutes,
+      elapsedMinutes,
+      unfocusedMinutes: elapsedMinutes - learnedMinutes,
+      focusRate: elapsedMinutes ? Math.round(learnedMinutes / elapsedMinutes * 100) : 0
+    };
+  }
+
+  return { consolidateEntries, calculateStreaks, calculateTimeBalance };
 });

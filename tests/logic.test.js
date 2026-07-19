@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { consolidateEntries, calculateStreaks } = require("../logic.js");
+const { consolidateEntries, calculateStreaks, calculateTimeBalance } = require("../logic.js");
 
 test("legacy multi-group rows count as one personal entry", () => {
   const entries = consolidateEntries([
@@ -32,4 +32,26 @@ test("current and best learning streaks are calculated independently", () => {
 test("a streak remains active until the end of a day without an entry", () => {
   const entries = [{ date: "2026-07-16" }, { date: "2026-07-17" }, { date: "2026-07-20" }, { date: "2026-07-21" }, { date: "2026-07-22" }];
   assert.deepEqual(calculateStreaks(entries, "2026-07-18"), { current: 2, best: 2 });
+});
+
+test("learning time is compared with the full seated time", () => {
+  const balance = calculateTimeBalance([
+    { minutes: 45, elapsedMinutes: 60 },
+    { minutes: 30, elapsedMinutes: 90 }
+  ]);
+  assert.deepEqual(balance, {
+    learnedMinutes: 75,
+    elapsedMinutes: 150,
+    unfocusedMinutes: 75,
+    focusRate: 50
+  });
+});
+
+test("legacy entries count as fully focused", () => {
+  assert.deepEqual(calculateTimeBalance([{ minutes: 40 }]), {
+    learnedMinutes: 40,
+    elapsedMinutes: 40,
+    unfocusedMinutes: 0,
+    focusRate: 100
+  });
 });

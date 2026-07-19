@@ -44,6 +44,7 @@ Für spätere Datenbankänderungen wird jeweils eine neue, zeitlich benannte SQL
 - Beitrittsanfragen, die erst ein Admin bestätigt
 - Einladungen deaktivieren, zeitlich begrenzen oder mit einem neuen Code versehen
 - synchronisierte Lernzeiten auf mehreren Geräten
+- getrennte Erfassung von gesamter Sitzzeit und tatsächlich gelernter Zeit mit Fokusquote
 - einen Lernzeiteintrag gleichzeitig mehreren Gruppen zuordnen, ohne die persönliche Zeit doppelt zu zählen
 - Sichtbarkeit pro Eintrag: **Ganze Gruppe**, **Nur Gruppenadmins** oder **Nur ich**
 - persönliches Wochenziel mit Fortschrittsanzeige
@@ -64,7 +65,7 @@ Für spätere Datenbankänderungen wird jeweils eine neue, zeitlich benannte SQL
 - als App installierbar; die Oberfläche öffnet sich auch offline, die Synchronisierung benötigt Internet
 - persönliche Hintergrundwahl zwischen **Sonnenuntergang** und **Wayne Noir**, im Konto geräteübergreifend gespeichert
 - automatische, private Übernahme vorhandener lokaler Einträge beim ersten Login
-- automatisierte Tests für Mehrfachzuordnungen und Serienberechnungen
+- automatisierte Tests für Mehrfachzuordnungen, Serien- und Zeitvergleichsberechnungen
 
 ## Datenschutz und Zugriffsregeln
 

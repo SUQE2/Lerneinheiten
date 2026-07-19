@@ -18,6 +18,15 @@
   ], "2026-07-18");
   check(streaks.current === 1, "Aktuelle Serie ist falsch");
   check(streaks.best === 2, "Bestserie ist falsch");
+  const balance = LernzeitLogic.calculateTimeBalance([
+    { minutes: 45, elapsedMinutes: 60 },
+    { minutes: 30, elapsedMinutes: 90 },
+    { minutes: 15 }
+  ]);
+  check(balance.learnedMinutes === 90, "Gelernte Zeit ist falsch");
+  check(balance.elapsedMinutes === 165, "Gesamte Sitzzeit ist falsch");
+  check(balance.unfocusedMinutes === 75, "Differenz der Zeiten ist falsch");
+  check(balance.focusRate === 55, "Fokusquote ist falsch");
   const result = document.querySelector("#result");
   result.dataset.status = failures.length ? "failed" : "passed";
   result.textContent = failures.length ? failures.join("\n") : "Alle Logiktests bestanden";
