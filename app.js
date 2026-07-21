@@ -729,8 +729,8 @@ function openDialog(entry = null) {
   $("#entrySubmitButton").textContent = entry ? "Änderungen speichern" : "Eintrag speichern";
   $("#entryDate").value = entry?.date || localISO(new Date());
   $("#entryHours").value = entry ? Math.floor(entry.minutes / 60) : 0;
-  $("#entryMinutes").value = entry ? entry.minutes % 60 : 30;
-  const elapsed = entry ? elapsedMinutes(entry) : 30;
+  $("#entryMinutes").value = entry ? entry.minutes % 60 : 0;
+  const elapsed = entry ? elapsedMinutes(entry) : 0;
   $("#elapsedHours").value = Math.floor(elapsed / 60);
   $("#elapsedMinutes").value = elapsed % 60;
   renderEntryFocusPreview();
@@ -1289,9 +1289,9 @@ $("#entryForm").addEventListener("submit", async event => {
 
   $("#entryDialog").close();
   $("#entryHours").value = 0;
-  $("#entryMinutes").value = 30;
+  $("#entryMinutes").value = 0;
   $("#elapsedHours").value = 0;
-  $("#elapsedMinutes").value = 30;
+  $("#elapsedMinutes").value = 0;
   $("#entryTopic").value = "";
   editingEntryId = null;
   editingEntryIds = [];

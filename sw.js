@@ -1,4 +1,4 @@
-const CACHE = "lernzeit-shell-v12";
+const CACHE = "lernzeit-shell-v13";
 const SHELL = ["./", "./index.html", "./styles.css", "./logic.js", "./app.js", "./config.js", "./manifest.webmanifest", "./icon.svg", "./icon-192.png", "./icon-512.png", "./wallpaper.png", "./wallpaper-noir-v3.webp"];
 const SUPABASE_LIBRARY = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
 
